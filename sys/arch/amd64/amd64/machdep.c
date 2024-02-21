@@ -502,6 +502,7 @@ const struct sysctl_bounded_args cpuctl_vars[] = {
 	{ CPU_XCRYPT, &amd64_has_xcrypt, SYSCTL_INT_READONLY },
 	{ CPU_INVARIANTTSC, &tsc_is_invariant, SYSCTL_INT_READONLY },
 	{ CPU_RETPOLINE, &need_retpoline, SYSCTL_INT_READONLY },
+	{ CPU_SEVGUESTMODE, &cpu_sev_guestmode, SYSCTL_INT_READONLY },
 };
 
 /*
