@@ -570,7 +570,9 @@ cpu_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 		return (sysctl_rdquad(oldp, oldlenp, newp, tsc_frequency));
 	case CPU_VMMODE:
 		if (ISSET(cpu_ecxfeature, CPUIDECX_HV)) {
-			if (ISSET(cpu_sev_guestmode, SEV_STAT_ES_ENABLED))
+			if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
+				strlcpy(vmmode, "SEV-SNP", sizeof(vmmode));
+			else if (ISSET(cpu_sev_guestmode, SEV_STAT_ES_ENABLED))
 				strlcpy(vmmode, "SEV-ES", sizeof(vmmode));
 			else if (ISSET(cpu_sev_guestmode, SEV_STAT_ENABLED))
 				strlcpy(vmmode, "SEV", sizeof(vmmode));
