@@ -12,4 +12,6 @@ SUBDIR=	atactl badsect bioctl clri dhcp6leased dhcpleased \
 	scsi slaacd shutdown swapctl sysctl ttyflags tunefs vnconfig \
 	umount unwind wsconsctl
 
+SUBDIR+= pspctl
+
 .include <bsd.subdir.mk>
