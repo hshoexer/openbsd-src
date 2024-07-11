@@ -1,0 +1,67 @@
+.\"     $OpenBSD: $
+.\"
+.\" Copyright (c) 2024 Hans-Joerg Hoexer <hshoexer@genua.de>
+.\"
+.\" Permission to use, copy, modify, and distribute this software for any
+.\" purpose with or without fee is hereby granted, provided that the above
+.\" copyright notice and this permission notice appear in all copies.
+.\"
+.\" THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\" WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\" MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\" ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\" WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.\"
+.Dd $Mdocdate: February 8 2024 $
+.Dt PSPCTL 8
+.Os
+.Sh NAME
+.Nm pspctl
+.Nd an experimental program to manipulate the AMD PSP
+.Sh SYNOPSIS
+.Nm pspctl
+.Op Ar command Op Ar arg ...
+.Sh DESCRIPTION
+.Nm
+allows system administrator to issue commands to the Platform
+Security Processor (PSP).
+.Pp
+The main purpose of
+.Nm
+is to show status of SEV guests and clean up orphand guests.
+.Pp
+The commands are as fllows:
+.Bl -tag -width Ds
+.It Cm status Ar [id]
+Shows the global status of the PSP.
+With optional
+.Ar id
+provided details on particular SEV guest are shown.
+.It Cm deactivate Ar id
+Deactivates SEV guest.
+.It Cm decommission Ar id
+Clears all information and keys of specified guest from PSP.
+.It Cm attestation Ar id
+Requests attestation report for specified guest from PSP.
+A hex dump will show the raw report.
+.It Cm shutdown
+Shutdown PSP and release all allocated resources.
+.It Cm init
+Initialize the PSP.
+.It Cm firmware Ar file
+Update PSP with provided firmware binary
+.Ar file .
+Before loading a firmware file, the PSP has to be shut down using
+the command
+.Cm shutdown .
+After loading a firmware file, the PSP has to be initialized again
+using the command
+.Cm init .
+.El
+.Sh SEE ALSO
+.Xr ioctl 2 ,
+.Xr vmm 4 ,
+.Xr vmd 8 ,
+.Xr vmctl 8
