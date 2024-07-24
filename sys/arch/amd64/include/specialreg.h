@@ -701,6 +701,9 @@
 #define MSR_PATCH_LOADER	0xc0010020
 #define MSR_INT_PEN_MSG	0xc0010055	/* Interrupt pending message */
 
+#define MSR_SYS_CFG	0xc0010010	/* System Configuration */
+#define		SYS_MEMENCRYPTIONMODEEN	0x00800000	/* SEV */
+
 #define MSR_DE_CFG	0xc0011029	/* Decode Configuration */
 #define	DE_CFG_721	0x00000001	/* errata 721 */
 #define DE_CFG_SERIALIZE_LFENCE	(1 << 1)	/* Enable serializing lfence */
@@ -713,6 +716,7 @@
  * These require a 'passcode' for access.  See cpufunc.h.
  */
 #define	MSR_HWCR	0xc0010015
+#define		HWCR_SMMLOCK		0x00000001
 #define		HWCR_FFDIS		0x00000040
 #define		HWCR_TSCFREQSEL		0x01000000
 
@@ -1614,6 +1618,9 @@
 #define CPUID_AMD_SEV_CAP		0x8000001F
 #define AMD_SME_CAP			(1UL << 0)
 #define AMD_SEV_CAP			(1UL << 1)
+#define AMD_PGFLUSH_MSR_CAP		(1UL << 2)
+#define AMD_SEVES_CAP			(1UL << 3)
+#define AMD_SEVSNP_CAP			(1UL << 4)
 
 /*
  * PAT
