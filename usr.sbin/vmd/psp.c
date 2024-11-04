@@ -28,6 +28,7 @@
 #include "vmd.h"
 
 extern struct vmd	*env;
+extern struct vmd_vm	*current_vm;
 
 /* Guest policy */
 #define GPOL_NODBG	(1ULL << 0)	/* no debuggin */
@@ -197,10 +198,11 @@ psp_encrypt_state(uint32_t handle, uint32_t asid, uint32_t vmid,
 int
 psp_launch_measure(uint32_t handle)
 {
-	struct psp_launch_measure lm;
-	char *p, buf[256];
-	size_t len;
-	unsigned int i;
+	struct vm_create_params	*vcp = &current_vm->vm_params.vmc_params;
+	struct			 psp_launch_measure lm;
+	char			*p, buf[256];
+	size_t			 len;
+	unsigned int		 i;
 
 	memset(&lm, 0, sizeof(lm));
 	lm.handle = handle;
@@ -224,7 +226,8 @@ psp_launch_measure(uint32_t handle)
 	    i++, p += 2, len -= 2) {
 		snprintf(p, len, "%02x", lm.measure[i]);
 	}
-	log_info("%s: measurement 0x%s", __func__, buf);
+	log_info("%s (vm %d) measurement 0x%s", vcp->vcp_name,
+	    current_vm->vm_vmid, buf);
 
 	len = sizeof(buf);
 	memset(buf, 0, len);
@@ -233,7 +236,8 @@ psp_launch_measure(uint32_t handle)
 	    i++, p += 2, len -= 2) {
 		snprintf(p, len, "%02x", lm.measure_nonce[i]);
 	}
-	log_info("%s: nonce 0x%s", __func__, buf);
+	log_info("%s (vm %d) nonce 0x%s", vcp->vcp_name, current_vm->vm_vmid,
+	    buf);
 
 	return (0);
 }
