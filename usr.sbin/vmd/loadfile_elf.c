@@ -584,6 +584,7 @@ marc4random_buf(paddr_t addr, int sz)
 	int i, ct;
 	char buf[PAGE_SIZE];
 
+	/* XXX hshoexer:  Do not encrypt -> do not measure */
 	sev_register_encryption(addr, sz);
 
 	/*
