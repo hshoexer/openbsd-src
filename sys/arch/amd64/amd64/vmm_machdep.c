@@ -6780,6 +6780,8 @@ vcpu_run_svm(struct vcpu *vcpu, struct vm_run_params *vrp)
 		 * On exit, interrupts are disabled, and we are running with
 		 * the guest FPU state still possibly on the CPU. Save the FPU
 		 * state before re-enabling interrupts.
+		 *
+		 * XXX hshoexer:  With SEV-ES we should be able to skip this.
 		 */
 		vmm_fpusave(vcpu);
 
