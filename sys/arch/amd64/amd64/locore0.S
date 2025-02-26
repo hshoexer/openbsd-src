@@ -877,7 +877,7 @@ locore_vc_trap32:
 	iret
 
 .Lterminate32:
-	movl	$MSR_PROTO_TERMINATE, %eax
+	movl	$MSR_PROTO_TERMINATION_REQ, %eax
 	movl	$MSR_SEV_GHCB, %ecx
 	wrmsr
 	rep vmmcall
