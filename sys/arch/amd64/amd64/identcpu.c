@@ -716,10 +716,13 @@ identifycpu(struct cpu_info *ci)
 		amd64_pos_cbit = (ci->ci_feature_amdsev_ebx & 0x3f);
 		amd64_phys_red = ((ci->ci_feature_amdsev_ebx >> 6) & 0x3f);
 		amd64_min_noes_asid = ci->ci_feature_amdsev_edx;
-		if (cpu_sev_guestmode && CPU_IS_PRIMARY(ci))
+		if (cpu_sev_guestmode && CPU_IS_PRIMARY(ci)) {
 			printf("\n%s: SEV%s guest mode", ci->ci_dev->dv_xname,
-			    ISSET(cpu_sev_guestmode, SEV_STAT_ES_ENABLED) ?
-			    "-ES" : "");
+			    ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE) ?
+			    "-SNP" :
+			    (ISSET(cpu_sev_guestmode, SEV_STAT_ES_ENABLED) ?
+			    "-ES" : ""));
+		}
 	}
 
 	printf("\n");
