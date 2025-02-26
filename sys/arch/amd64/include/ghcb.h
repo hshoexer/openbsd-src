@@ -42,6 +42,19 @@
 
 #define GHCB_MAX			0xFFF
 
+#endif	/* !_LOCORE */
+
+/* Definitions used with the MSR protocol */
+#define MSR_PROTO_CPUID_REQ			0x4
+#define MSR_PROTO_CPUID_RESP			0x5
+#define MSR_PROTO_PREFERRED_GHCB_PA_REQ		0x10
+#define MSR_PROTO_PREFERRED_GHCB_PA_RESP	0x11
+#define MSR_PROTO_REGISTER_GHCB_PA_REQ		0x12
+#define MSR_PROTO_REGISTER_GHCB_PA_RESP		0x13
+#define MSR_PROTO_TERMINATION_REQ		0x100
+
+#ifndef _LOCORE
+
 struct ghcb_sa {
 	uint8_t			v_pad0[0xcb];		/* 000h-0CAh */
 	uint8_t			v_cpl;			/* 0CBh */
@@ -102,14 +115,6 @@ struct ghcb_sync {
 	int			sz_c;
 	int			sz_d;
 };
-#endif /* !_LOCORE */
-
-/* Definitions used with the MSR protocol */
-#define MSR_PROTO_CPUID_REQ	0x4
-#define MSR_PROTO_CPUID_RESP	0x5
-#define MSR_PROTO_TERMINATE	0x100
-
-#ifndef _LOCORE
 
 extern vaddr_t ghcb_vaddr;
 extern paddr_t ghcb_paddr;
