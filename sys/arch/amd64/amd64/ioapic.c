@@ -299,7 +299,7 @@ ioapic_attach(struct device *parent, struct device *self, void *aux)
 	int apic_id;
 	bus_space_handle_t bh;
 	u_int32_t ver_sz;
-	int i;
+	int i, flags = 0;
 
 	sc->sc_flags = aaa->flags;
 	sc->sc_apicid = aaa->apic_id;
@@ -315,7 +315,11 @@ ioapic_attach(struct device *parent, struct device *self, void *aux)
 
 	printf(" pa 0x%lx", aaa->apic_address);
 
-	if (x86_mem_add_mapping(aaa->apic_address, PAGE_SIZE, 0, &bh) != 0) {
+	if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
+		flags |= BUS_SPACE_MAP_SHARED;
+
+	if (x86_mem_add_mapping(aaa->apic_address, PAGE_SIZE, flags, &bh)
+	    != 0) {
 		printf(", map failed\n");
 		return;
 	}

@@ -395,6 +395,10 @@ bus_space_map(bus_space_tag_t t, bus_addr_t bpa, bus_size_t size, int flags,
 		return(0);
 	}
 
+	if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE) &&
+	    (flags & BUS_SPACE_MAP_LINEAR) == 0)
+		flags |= BUS_SPACE_MAP_SHARED;
+
 	/*
 	 * For memory space, map the bus physical address to
 	 * a kernel virtual address.
@@ -424,6 +428,9 @@ _bus_space_map(bus_space_tag_t t, bus_addr_t bpa, bus_size_t size, int flags,
 		*bshp = bpa;
 		return (0);
 	}
+
+	if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
+		flags |= BUS_SPACE_MAP_SHARED;
 
 	/*
 	 * For memory space, map the bus physical address to
@@ -524,6 +531,9 @@ x86_mem_add_mapping(bus_addr_t bpa, bus_size_t size, int flags,
 		pmap_flags = 0;
 	else if (flags & BUS_SPACE_MAP_PREFETCHABLE)
 		pmap_flags = PMAP_WC;
+
+	if (flags & BUS_SPACE_MAP_SHARED)
+		pmap_flags |= PMAP_NOCRYPT;
 
 	for (; map_size > 0;
 	    pa += PAGE_SIZE, va += PAGE_SIZE, map_size -= PAGE_SIZE)

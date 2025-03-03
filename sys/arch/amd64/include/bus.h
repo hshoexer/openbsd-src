@@ -492,6 +492,7 @@ bus_space_barrier(bus_space_tag_t space, bus_space_handle_t
 #define	BUS_SPACE_MAP_CACHEABLE		0x0001
 #define	BUS_SPACE_MAP_LINEAR		0x0002
 #define	BUS_SPACE_MAP_PREFETCHABLE	0x0008
+#define	BUS_SPACE_MAP_SHARED		0x0010
 
 /*
  * Values for the x86 bus space tag, not to be used directly by MI code.
