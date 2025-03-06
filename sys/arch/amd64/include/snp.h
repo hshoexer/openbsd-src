@@ -19,10 +19,13 @@
 #ifndef _MACHINE_SNP_H_
 #define _MACHINE_SNP_H_
 
+#include <uvm/uvm.h>
+
 #define SNP_PSC_PRIVATE		0x0001
 #define SNP_PSC_SHARED		0x0002
 
-void	snp_claim(paddr_t, paddr_t);
-void	snp_rescind(paddr_t, paddr_t);
+void	snp_claim_early(paddr_t, paddr_t);
+void	snp_claim_pages(struct pglist *);
+void	snp_rescind_pages(struct pglist *);
 
 #endif /* !_MACHINE_SNP_H_ */
