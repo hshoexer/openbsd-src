@@ -639,3 +639,63 @@ ghcb_msr_rw(int msr, uint64_t *val, int read)
 	if (read && val)
 		*val = ((frame.tf_rdx << 32) | frame.tf_rax);
 }
+
+/*
+ * ghcb_psc_vmgexit
+ *
+ * Request a page state change from the hypervisor.
+ */
+int
+ghcb_psc_vmgexit(struct ghcb_psc *psc, size_t sz)
+{
+	struct ghcb_sa	*ghcb;
+	uint64_t	 s, sw_exitinfo1, sw_exitinfo2;
+	uint8_t		 valid_bm[GHCB_VB_SZ], expected_bm[GHCB_VB_SZ];
+	int		 error = 0;
+
+	if (sz > sizeof(ghcb->v_sharedbuf))
+		return (EINVAL);
+
+	memset(valid_bm, 0, sizeof(valid_bm));
+	memset(expected_bm, 0, sizeof(expected_bm));
+
+	s = intr_disable();
+
+	ghcb = (struct ghcb_sa *)ghcb_vaddr;
+	ghcb_clear(ghcb);
+	memcpy(ghcb->v_sharedbuf, psc, sz);
+
+	ghcb->v_sw_exitcode = SEV_VMGEXIT_PAGE_STATE_CHANGE;
+	ghcb->v_sw_exitinfo1 = 0;
+	ghcb->v_sw_exitinfo2 = 0;
+	ghcb->v_sw_scratch = ghcb_paddr + offsetof(struct ghcb_sa,
+	    v_sharedbuf);
+	ghcb_valbm_set(valid_bm, GHCB_SW_EXITCODE);
+	ghcb_valbm_set(valid_bm, GHCB_SW_EXITINFO1);
+	ghcb_valbm_set(valid_bm, GHCB_SW_EXITINFO2);
+	ghcb_valbm_set(valid_bm, GHCB_SW_SCRATCH);
+	ghcb_valbm_set(expected_bm, GHCB_SW_EXITINFO1);
+	ghcb_valbm_set(expected_bm, GHCB_SW_EXITINFO2);
+
+	memcpy(ghcb->valid_bitmap, valid_bm, sizeof(ghcb->valid_bitmap));
+
+	vmgexit();
+
+	memcpy(valid_bm, ghcb->valid_bitmap, sizeof(valid_bm));
+	sw_exitinfo1 = ghcb->v_sw_exitinfo1;
+	sw_exitinfo2 = ghcb->v_sw_exitinfo2;
+	ghcb_clear(ghcb);
+
+	if (ghcb_verify_bm(valid_bm, expected_bm))
+		panic("invalid hypervisor response");
+
+	if (sw_exitinfo1 != 0)
+		panic("page state change failed: 0x%llx 0x%llx", sw_exitinfo1,
+		    sw_exitinfo2);
+
+	/* XXX hshoexer: ignoring sw_exitinfo2 for now. */
+
+	intr_restore(s);
+
+	return (error);
+}
