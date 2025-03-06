@@ -374,13 +374,22 @@ vctrap(struct trapframe *frame, int user, int *sig, int *code)
 		frame->tf_rip += 2;
 		break;
 	    }
-	case SVM_VMEXIT_NPF:
+	case SVM_VMEXIT_NPF: {
 		if (user) {
 			*sig = SIGBUS;
 			*code = BUS_ADRERR;
 			return 0;	/* not allowed from userspace */
 		}
 		panic("unexpected MMIO in kernelspace");
+		}
+		/* NOTREACHED */
+	case SVM_VMEXIT_PAGE_NOT_VALIDATED: {
+		paddr_t pa;
+		vaddr_t va = rcr2();
+		pmap_extract(pmap_kernel(), va, &pa);
+		panic("page not validated access at 0x%llx on 0x%lx/0x%lx",
+		    frame->tf_rip, va, pa);
+		}
 		/* NOTREACHED */
 	default:
 		panic("invalid exit code 0x%llx", ghcb_regs.exitcode);
