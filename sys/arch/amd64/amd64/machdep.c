@@ -101,6 +101,7 @@
 #include <machine/kcore.h>
 #include <machine/tss.h>
 #include <machine/ghcb.h>
+#include <machine/snp.h>
 
 #include <dev/isa/isareg.h>
 #include <dev/ic/i8042reg.h>
@@ -1722,6 +1723,9 @@ init_x86_64(paddr_t first_avail)
 #endif
 		uvm_page_physload(atop(seg_start), atop(seg_end),
 		    atop(seg_start), atop(seg_end), 0);
+
+		if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
+			snp_claim(seg_start, seg_end);
 	}
 
 	/*
@@ -1738,6 +1742,8 @@ init_x86_64(paddr_t first_avail)
 #endif
 			uvm_page_physload(atop(seg_start), atop(seg_end),
 			    atop(seg_start), atop(seg_end), 0);
+			if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
+				snp_claim(seg_start, seg_end);
 		}
 	}
 
