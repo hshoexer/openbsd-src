@@ -1711,7 +1711,7 @@ init_x86_64(paddr_t first_avail)
 		    atop(seg_start), atop(seg_end), 0);
 
 		if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
-			snp_claim(seg_start, seg_end);
+			snp_claim_early(seg_start, seg_end);
 	}
 
 	/*
@@ -1729,7 +1729,7 @@ init_x86_64(paddr_t first_avail)
 			uvm_page_physload(atop(seg_start), atop(seg_end),
 			    atop(seg_start), atop(seg_end), 0);
 			if (ISSET(cpu_sev_guestmode, SEV_STAT_SNP_ACTIVE))
-				snp_claim(seg_start, seg_end);
+				snp_claim_early(seg_start, seg_end);
 		}
 	}
 
