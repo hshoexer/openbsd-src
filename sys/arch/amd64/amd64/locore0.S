@@ -571,7 +571,7 @@ map_tables:
 	/* Map ISA I/O mem (later atdevbase) RW, NX */
 	movl	$(IOM_BEGIN|PG_V|PG_KW/*|PG_N*/),%eax
 	movl	$(IOM_SIZE>>PGSHIFT),%ecx
-	fillkpt_nx
+	fillkpt_nx_nc			/* XXX hshoexer:  only with SEV-SNP? */
 
 	/* Set up level 2 pages (RWX) */
 	leal	(PROC0_PTP2_OFF)(%esi),%ebx
