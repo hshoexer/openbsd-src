@@ -101,7 +101,7 @@ struct uvmline uvmline[] = {
 	  &uvmexp.pga_zeromiss, &last_uvmexp.pga_zeromiss, "pga_zeromiss",
 	  &uvmexp.fltget, &last_uvmexp.fltget, "fltget" },
 	{ &uvmexp.wiredmax, &last_uvmexp.wiredmax, "wiredmax",
-	  NULL, NULL, NULL,
+	  &uvmexp.vctraps, &last_uvmexp.vctraps, "vctraps",
 	  &uvmexp.flt_anon, &last_uvmexp.flt_anon, "flt_anon" },
 	{ NULL, NULL, NULL,
 	  NULL, NULL, NULL,

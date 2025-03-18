@@ -112,7 +112,7 @@ struct uvmexp {
 				   was available */
 	int pga_zeromiss;	/* pagealloc where zero wanted and zero
 				   not available */
-	int unused09;		/* formerly zeroaborts */
+	int vctraps;		/* vctraps */
 
 	/* fault subcounters */
 	int fltnoram;	/* [p] # of times fault was out of ram */
