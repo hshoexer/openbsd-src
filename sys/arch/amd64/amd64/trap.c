@@ -316,6 +316,8 @@ vctrap(struct trapframe *frame, int user, int *sig, int *code)
 		KASSERT(code != NULL);
 	}
 
+	uvmexp.vctraps++;
+
 	memset(&syncout, 0, sizeof(syncout));
 	memset(&syncin, 0, sizeof(syncin));
 	memset(&ghcb_regs, 0, sizeof(ghcb_regs));
