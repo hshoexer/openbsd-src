@@ -538,6 +538,7 @@ dosum(void)
 	(void)printf("%11u kernel map entries\n", uvmexp.kmapent);
 	(void)printf("%11u zeroed page hits\n", uvmexp.pga_zerohit);
 	(void)printf("%11u zeroed page misses\n", uvmexp.pga_zeromiss);
+	(void)printf("%11u vctraps\n", uvmexp.vctraps);
 
 	/* daemon counters */
 	(void)printf("%11u number of times the pagedaemon woke up\n",
