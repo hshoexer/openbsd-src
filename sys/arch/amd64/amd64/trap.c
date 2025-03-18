@@ -311,6 +311,8 @@ vctrap(struct trapframe *frame, int user)
 
 	KASSERT((read_rflags() & PSL_I) == 0);
 
+	uvmexp.vctraps++;
+
 	memset(&syncout, 0, sizeof(syncout));
 	memset(&syncin, 0, sizeof(syncin));
 	memset(&ghcb_regs, 0, sizeof(ghcb_regs));
