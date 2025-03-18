@@ -310,6 +310,8 @@ vctrap(struct trapframe *frame, int user)
 	struct ghcb_sync syncout, syncin;
 	struct ghcb_sa	*ghcb;
 
+	uvmexp.vctraps++;
+
 	intr_disable();
 
 	memset(&syncout, 0, sizeof(syncout));
