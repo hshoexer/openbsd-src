@@ -311,8 +311,6 @@ vctrap(struct trapframe *frame, int user)
 
 	KASSERT((read_rflags() & PSL_I) == 0);
 
-	uvmexp.vctraps++;
-
 	memset(&syncout, 0, sizeof(syncout));
 	memset(&syncin, 0, sizeof(syncin));
 	memset(&ghcb_regs, 0, sizeof(ghcb_regs));
@@ -331,6 +329,7 @@ vctrap(struct trapframe *frame, int user)
 	 */
 	switch (ghcb_regs.exitcode) {
 	case SVM_VMEXIT_CPUID:
+		uvmexp.vc_cpuid++;
 		ghcb_sync_val(GHCB_RAX, GHCB_SZ32, &syncout);
 		ghcb_sync_val(GHCB_RCX, GHCB_SZ32, &syncout);
 
@@ -354,12 +353,14 @@ vctrap(struct trapframe *frame, int user)
 			return 0;	/* not allowed from userspace */
 		if (*rip == 0x0f && *(rip + 1) == 0x30) {
 			/* WRMSR */
+			uvmexp.vc_wrmsr++;
 			ghcb_sync_val(GHCB_RAX, GHCB_SZ32, &syncout);
 			ghcb_sync_val(GHCB_RCX, GHCB_SZ32, &syncout);
 			ghcb_sync_val(GHCB_RDX, GHCB_SZ32, &syncout);
 			ghcb_regs.exitinfo1 = 1;
 		} else if (*rip == 0x0f && *(rip + 1) == 0x32) {
 			/* RDMSR */
+			uvmexp.vc_rdmsr++;
 			ghcb_sync_val(GHCB_RCX, GHCB_SZ32, &syncout);
 			ghcb_sync_val(GHCB_RAX, GHCB_SZ32, &syncin);
 			ghcb_sync_val(GHCB_RDX, GHCB_SZ32, &syncin);
