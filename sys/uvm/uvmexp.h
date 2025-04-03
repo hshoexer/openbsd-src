@@ -89,8 +89,8 @@ struct uvmexp {
 	int swpgonly;	/* [a] number of swap pages in use, not also in RAM */
 	int nswget;	/* [a] number of swap pages moved from disk to RAM */
 	int nanon;	/* XXX number total of anon's in system */
-	int unused05;	/* formerly nanonneeded */
-	int unused06;	/* formerly nfreeanon */
+	int vc_wrmsr;	/* formerly nanonneeded */
+	int vc_rdmsr;	/* formerly nfreeanon */
 
 	/* stat counters */
 	int faults;		/* [p] page fault count */
@@ -112,7 +112,7 @@ struct uvmexp {
 				   was available */
 	int pga_zeromiss;	/* pagealloc where zero wanted and zero
 				   not available */
-	int vctraps;		/* vctraps */
+	int vc_cpuid;		/* vctraps */
 
 	/* fault subcounters */
 	int fltnoram;	/* [p] # of times fault was out of ram */
@@ -151,7 +151,7 @@ struct uvmexp {
 	int pdpending;	/* number of times daemon got a pending pagout */
 	int pddeact;	/* number of pages daemon deactivates */
 
-	int unused13;	/* formerly pdrevtext */
+	int vc_ioio;	/* formerly pdrevtext */
 
 	int fpswtch;	/* FPU context switches */
 	int kmapent;	/* number of kernel map entries */

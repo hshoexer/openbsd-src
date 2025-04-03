@@ -336,6 +336,7 @@ vctrap(struct trapframe *frame, int user, int *sig, int *code)
 	 */
 	switch (ghcb_regs.exitcode) {
 	case SVM_VMEXIT_CPUID:
+		uvmexp.vc_cpuid++;
 		ghcb_sync_val(GHCB_RAX, GHCB_SZ32, &syncout);
 		ghcb_sync_val(GHCB_RCX, GHCB_SZ32, &syncout);
 
@@ -362,12 +363,14 @@ vctrap(struct trapframe *frame, int user, int *sig, int *code)
 		}
 		if (*rip == 0x0f && *(rip + 1) == 0x30) {
 			/* WRMSR */
+			uvmexp.vc_wrmsr++;
 			ghcb_sync_val(GHCB_RAX, GHCB_SZ32, &syncout);
 			ghcb_sync_val(GHCB_RCX, GHCB_SZ32, &syncout);
 			ghcb_sync_val(GHCB_RDX, GHCB_SZ32, &syncout);
 			ghcb_regs.exitinfo1 = 1;
 		} else if (*rip == 0x0f && *(rip + 1) == 0x32) {
 			/* RDMSR */
+			uvmexp.vc_rdmsr++;
 			ghcb_sync_val(GHCB_RCX, GHCB_SZ32, &syncout);
 			ghcb_sync_val(GHCB_RAX, GHCB_SZ32, &syncin);
 			ghcb_sync_val(GHCB_RDX, GHCB_SZ32, &syncin);
