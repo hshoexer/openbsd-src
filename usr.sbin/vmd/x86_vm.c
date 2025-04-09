@@ -54,6 +54,7 @@ int	 translate_gva(struct vm_exit*, uint64_t, uint64_t *, int);
 static int	loadfile_bios(gzFile, off_t, struct vcpu_reg_state *);
 static int	vcpu_exit_eptviolation(struct vm_run_params *);
 static void	vcpu_exit_inout(struct vm_run_params *);
+static int	vcpu_exit_ghcb_mmio(struct vm_run_params *);
 
 extern struct vmd_vm	*current_vm;
 extern int		 con_fd;
@@ -545,6 +546,12 @@ vcpu_exit(struct vm_run_params *vrp)
 	case SVM_VMEXIT_SHUTDOWN:
 		/* reset VM */
 		return (EAGAIN);
+	case SEV_VMGEXIT_MMIO_READ:
+	case SEV_VMGEXIT_MMIO_WRITE:
+		ret = vcpu_exit_ghcb_mmio(vrp);
+		if (ret)
+			return (ret);
+		break;
 	default:
 		log_debug("%s: unknown exit reason 0x%x",
 		    __progname, vrp->vrp_exit_reason);
@@ -679,6 +686,47 @@ vcpu_exit_pci(struct vm_run_params *vrp)
 	}
 
 	return (intr);
+}
+
+/*
+ * vcpu_exit_ghcb_mmio
+ *
+ * Simple GHCB based MMIO paravirtualization for.  For now, limited
+ * to a maximum of one uint64_t at a time.  We can not write to the
+ * shared buffer in the GHCB, as the kernel will clear and reset the
+ * GHCB on return into the guest.  This can be optimized.
+ *
+ * We only access reserved memory (ie. 640K to 1M).
+ */
+static int
+vcpu_exit_ghcb_mmio(struct vm_run_params *vrp)
+{
+	struct vm_exit		*vei = vrp->vrp_exit;
+	struct vm_mem_range	*vmr;
+	uint64_t		 val;
+
+	vmr = find_gpa_range(&current_vm->vm_params.vmc_params,
+	    vei->veg.veg_exitinfo1, vei->veg.veg_exitinfo2);
+	if (vmr == NULL || vmr->vmr_type != VM_MEM_RESERVED)
+		return (-1);
+
+	if (vei->veg.veg_exitcode == SEV_VMGEXIT_MMIO_READ) {
+		if (vei->veg.veg_exitinfo2 > sizeof(val))
+			return (-1);
+		val = 0;
+		if (read_mem(vei->veg.veg_exitinfo1, &val,
+		    vei->veg.veg_exitinfo2) != 0)
+			return (-1);
+		vei->veg.veg_scratch2 = val;
+	} else {
+		if (vei->veg.veg_exitinfo2 > sizeof(vei->veg.veg_scratch2))
+			return (-1);
+		if (write_mem(vei->veg.veg_exitinfo1, &vei->veg.veg_scratch2,
+		    vei->veg.veg_exitinfo2) != 0)
+			return (-1);
+	}
+
+	return (0);
 }
 
 /*
