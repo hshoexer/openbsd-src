@@ -111,7 +111,7 @@ struct vm_run_params {
 	struct vm_exit	*vrp_exit;		/* updated exit data */
 
 	/* Output parameter from VMM_IOC_RUN */
-	uint16_t	vrp_exit_reason;	/* exit reason */
+	uint32_t	vrp_exit_reason;	/* exit reason */
 	uint8_t		vrp_irqready;		/* ready for IRQ on entry */
 };
 
