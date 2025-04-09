@@ -357,6 +357,17 @@ struct vm_exit_eptviolation {
 };
 
 /*
+ * vm_exit_ghcb_mmio		: describes GHCB paravirtualized MMIO
+ */
+struct vm_exit_ghcb_mmio {
+	uint64_t	veg_exitcode;
+	uint64_t	veg_exitinfo1;
+	uint64_t	veg_exitinfo2;
+	uint64_t	veg_scratch;
+	uint64_t	veg_scratch2;
+};
+
+/*
  * struct vcpu_inject_event	: describes an exception or interrupt to inject.
  */
 struct vcpu_inject_event {
@@ -471,6 +482,7 @@ struct vm_exit {
 	union {
 		struct vm_exit_inout		vei;	/* IN/OUT exit */
 		struct vm_exit_eptviolation	vee;	/* EPT VIOLATION exit*/
+		struct vm_exit_ghcb_mmio	veg;	/* GHCB paravirt */
 	};
 
 	struct vcpu_reg_state		vrs;

@@ -4381,6 +4381,12 @@ svm_vmgexit_sync_host(struct vcpu *vcpu)
 			ghcb_valbm_set(expected_bm, GHCB_RCX);
 		}
 		break;
+	case SEV_VMGEXIT_MMIO_READ:
+		ghcb_valbm_set(expected_bm, GHCB_SW_SCRATCH);
+		break;
+	case SEV_VMGEXIT_MMIO_WRITE:
+		ghcb_valbm_set(expected_bm, GHCB_SW_SCRATCH);
+		break;
 	default:
 		return (EINVAL);
 	}
@@ -4402,6 +4408,23 @@ svm_vmgexit_sync_host(struct vcpu *vcpu)
 		vcpu->vc_gueststate.vg_rcx = ghcb->v_rcx;
 	if (ghcb_valbm_isset(expected_bm, GHCB_RDX))
 		vcpu->vc_gueststate.vg_rdx = ghcb->v_rdx;
+
+	/* Required data for paravirtualized MMIO */
+	if (ghcb_valbm_isset(expected_bm, GHCB_SW_SCRATCH) &&
+	    svm_sw_exitcode == SEV_VMGEXIT_MMIO_READ) {
+		vcpu->vc_exit.veg.veg_exitcode = ghcb->v_sw_exitcode;
+		vcpu->vc_exit.veg.veg_exitinfo1 = ghcb->v_sw_exitinfo1;
+		vcpu->vc_exit.veg.veg_exitinfo2 = ghcb->v_sw_exitinfo2;
+		vcpu->vc_exit.veg.veg_scratch = ghcb->v_sw_scratch;
+	} else if (ghcb_valbm_isset(expected_bm, GHCB_SW_SCRATCH) &&
+	    svm_sw_exitcode == SEV_VMGEXIT_MMIO_WRITE) {
+		vcpu->vc_exit.veg.veg_exitcode = ghcb->v_sw_exitcode;
+		vcpu->vc_exit.veg.veg_exitinfo1 = ghcb->v_sw_exitinfo1;
+		vcpu->vc_exit.veg.veg_exitinfo2 = ghcb->v_sw_exitinfo2;
+		vcpu->vc_exit.veg.veg_scratch = ghcb->v_sw_scratch;
+		vcpu->vc_exit.veg.veg_scratch2 =
+		    *(uint64_t *)ghcb->v_sharedbuf;
+	}
 
 	return (0);
 }
@@ -4453,6 +4476,13 @@ svm_vmgexit_sync_guest(struct vcpu *vcpu)
 			ghcb_valbm_set(valid_bm, GHCB_RAX);
 			ghcb_valbm_set(valid_bm, GHCB_RDX);
 		}
+		break;
+	case SEV_VMGEXIT_MMIO_READ:
+		if (vcpu->vc_exit.veg.veg_exitinfo2 >
+		    sizeof(vcpu->vc_exit.veg.veg_scratch2))
+			return (EINVAL);
+		memcpy(ghcb->v_sharedbuf, &vcpu->vc_exit.veg.veg_scratch2,
+		    vcpu->vc_exit.veg.veg_exitinfo2);
 		break;
 	default:
 		return (EINVAL);
@@ -4584,6 +4614,12 @@ svm_handle_vmgexit(struct vcpu *vcpu)
 		error = svm_handle_msr(vcpu);
 		vmcb->v_rip = vcpu->vc_gueststate.vg_rip;
 		syncout = 1;
+		break;
+	case SEV_VMGEXIT_MMIO_READ:
+		error = EAGAIN;
+		break;
+	case SEV_VMGEXIT_MMIO_WRITE:
+		error = EAGAIN;
 		break;
 	default:
 		DPRINTF("%s: unknown exit 0x%llx\n", __func__,
@@ -6640,6 +6676,10 @@ vcpu_run_svm(struct vcpu *vcpu, struct vm_run_params *vrp)
 			    vcpu->vc_parent->vm_id, vcpu->vc_id);
 			return (EINVAL);
 		}
+		break;
+	case SEV_VMGEXIT_MMIO_READ:
+		if (svm_vmgexit_sync_guest(vcpu))
+			return (EINVAL);
 		break;
 	}
 	memset(&vcpu->vc_exit, 0, sizeof(vcpu->vc_exit));
