@@ -19,6 +19,8 @@
 #include <sys/types.h>
 #include <sys/systm.h>
 
+#include <machine/cpu.h>
+#include <machine/cpufunc.h>
 #include <machine/frame.h>
 #include <machine/ghcb.h>
 
@@ -149,9 +151,12 @@ ghcb_sync_val(int type, int size, struct ghcb_sync *gs)
 	case GHCB_RDX:
 		gs->sz_d = size;
 		break;
+	case GHCB_XSS:
 	case GHCB_SW_EXITCODE:
 	case GHCB_SW_EXITINFO1:
 	case GHCB_SW_EXITINFO2:
+	case GHCB_SW_SCRATCH:
+	case GHCB_XCR0:
 		break;
 
 	default:
@@ -186,6 +191,17 @@ ghcb_sync_out(struct trapframe *frame, uint64_t exitcode, uint64_t exitinfo1,
 		ghcb->v_rcx = frame->tf_rcx & ghcb_sz_masks[gsout->sz_c];
 	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_RDX))
 		ghcb->v_rdx = frame->tf_rdx & ghcb_sz_masks[gsout->sz_d];
+
+	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_XSS)) {
+		if (rcr4() & CR4_OSXSAVE)
+			ghcb->v_xss = rdmsr(MSR_XSS);
+	}
+	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_XCR0)) {
+		if (rcr4() & CR4_OSXSAVE)
+			ghcb->v_xcr0 = xgetbv(0);
+		else
+			ghcb->v_xcr0 = 1;
+	}
 
 	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITCODE))
 		ghcb->v_sw_exitcode = exitcode;
