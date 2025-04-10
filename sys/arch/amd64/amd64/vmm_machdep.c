@@ -4365,6 +4365,11 @@ svm_vmgexit_sync_host(struct vcpu *vcpu)
 	svm_sw_exitcode = ghcb->v_sw_exitcode;
 	switch (svm_sw_exitcode) {
 	case SVM_VMEXIT_CPUID:
+		/*
+                 * RAX and RCX are always require for CPUID.  Guest
+                 * might also specify for XCR0 and XSS (for Extended
+                 * State Enumeration)
+		 */
 		ghcb_valbm_set(expected_bm, GHCB_RAX);
 		ghcb_valbm_set(expected_bm, GHCB_RCX);
 		break;
@@ -4430,6 +4435,18 @@ svm_vmgexit_sync_host(struct vcpu *vcpu)
 		vcpu->vc_exit.veg.veg_scratch = ghcb->v_sw_scratch;
 		vcpu->vc_exit.veg.veg_scratch2 =
 		    *(uint64_t *)ghcb->v_sharedbuf;
+	}
+
+	/* Required data for CPUID Extended State Enumeration */
+	if (svm_sw_exitcode == SVM_VMEXIT_CPUID &&
+	    ghcb_valbm_isset(valid_bm, GHCB_RAX) && ghcb->v_rax == 0xd) {
+		if (!ghcb_valbm_isset(valid_bm, GHCB_XSS) ||
+		    !ghcb_valbm_isset(valid_bm, GHCB_XCR0))
+			return (EINVAL);
+#if 0		/* XXX hshoexer: no XSS. */
+		vcpu->vc_gueststate.vg_xss = ghcb->v_xss;
+#endif
+		vcpu->vc_gueststate.vg_xcr0 = ghcb->v_xcr0;
 	}
 
 	return (0);
