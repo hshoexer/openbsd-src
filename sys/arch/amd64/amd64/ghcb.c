@@ -533,3 +533,10 @@ ghcb_psc_vmgexit(struct ghcb_psc *psc)
 
 	intr_restore(s);
 }
+
+/* XXX hshoexer: see i8259.h */
+void
+ghcb_outb(uint16_t port, uint8_t v)
+{
+	ghcb_io_write_1(port, v);
+}
