@@ -137,6 +137,8 @@ void	ghcb_sync_in(struct trapframe *, struct ghcb_extra_regs *,
 void	_ghcb_mem_rw(vaddr_t, int, void *, bool);
 void	_ghcb_io_rw(uint16_t, int, uint32_t *, bool);
 
+void	ghcb_outb(uint16_t, uint8_t);
+
 static inline uint8_t
 ghcb_mem_read_1(vaddr_t addr)
 {
