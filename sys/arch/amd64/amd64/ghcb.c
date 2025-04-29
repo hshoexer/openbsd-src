@@ -449,3 +449,10 @@ _ghcb_io_rw(uint16_t port, int valsz, uint32_t *val, bool read)
 	if (read)
 		*val = frame.tf_rax;
 }
+
+/* XXX hshoexer: see i8259.h */
+void
+ghcb_outb(uint16_t port, uint8_t v)
+{
+	ghcb_io_write_1(port, v);
+}
