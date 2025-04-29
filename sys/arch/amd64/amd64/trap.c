@@ -312,7 +312,7 @@ vctrap(struct trapframe *frame, int user)
 
 	uvmexp.vctraps++;
 
-	intr_disable();
+	intr_disable();		/* XXX hshoexer: should be always disabled */
 
 	memset(&syncout, 0, sizeof(syncout));
 	memset(&syncin, 0, sizeof(syncin));
