@@ -1746,6 +1746,7 @@ vcpu_svm_init_vmsa(struct vcpu *vcpu, struct vcpu_reg_state *vrs)
 	vmsa->v_rip = gprs[VCPU_REGS_RIP];
 
 	vmsa->v_xcr0 = vcpu->vc_gueststate.vg_xcr0;
+	vmsa->v_xss = 0;
 
 	/* initialize FPU */
 	vmsa->v_x87_fcw = __INITIAL_NPXCW__;
