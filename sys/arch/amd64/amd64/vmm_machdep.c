@@ -1587,7 +1587,7 @@ vcpu_reset_regs_svm(struct vcpu *vcpu, struct vcpu_reg_state *vrs)
 	    SVM_INTERCEPT_MWAIT_UNCOND | SVM_INTERCEPT_MONITOR |
 	    SVM_INTERCEPT_MWAIT_COND | SVM_INTERCEPT_RDTSCP;
 
-	/* With SEV-ES we cannot force access XCR0, thus no intercept */
+	/* With SEV-ES we cannot force access to XCR0, thus no intercept */
 	if (xsave_mask && !vcpu->vc_seves)
 		vmcb->v_intercept2 |= SVM_INTERCEPT_XSETBV;
 
@@ -1732,6 +1732,7 @@ vcpu_svm_init_vmsa(struct vcpu *vcpu, struct vcpu_reg_state *vrs)
 	vmsa->v_rip = gprs[VCPU_REGS_RIP];
 
 	vmsa->v_xcr0 = vcpu->vc_gueststate.vg_xcr0;
+	vmsa->v_xss = 0;
 
 	/* initialize FPU */
 	vmsa->v_x87_fcw = __INITIAL_NPXCW__;
@@ -6764,6 +6765,8 @@ vcpu_run_svm(struct vcpu *vcpu, struct vm_run_params *vrp)
 		 * On exit, interrupts are disabled, and we are running with
 		 * the guest FPU state still possibly on the CPU. Save the FPU
 		 * state before re-enabling interrupts.
+		 *
+		 * XXX hshoexer:  With SEV-ES we should be able to skip this.
 		 */
 		vmm_fpusave(vcpu);
 
