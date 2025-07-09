@@ -766,18 +766,16 @@ start_vmm_on_cpu(struct cpu_info *ci)
 		msr = rdmsr(MSR_EFER);
 		msr |= EFER_SVME;
 		wrmsr(MSR_EFER, msr);
+#if 0
+		if (ci->ci_feature_amdsev_eax & CPUIDEAX_SEVSNP) {
+			uint64_t syscfg, rmpbase, rmpend;
 
-#if 0		/* XXX hshoexer: Do we need this? */
-		if (ci->ci_feature_amdsev_eax & CPUIDEAX_SEV) {
-			msr = rdmsr(MSR_SYS_CFG);
-			msr |= SYS_MEMENCRYPTIONMODEEN;
-			wrmsr(MSR_SYS_CFG, msr);
-			msr = rdmsr_locked(MSR_SYS_CFG, OPTERON_MSR_PASSCODE);
-			if (!(msr & SYS_MEMENCRYPTIONMODEEN)) {
-				printf("%s: failed to set "
-				    "SYS_MEMENCRYPTIONMODEEN: 0x%llx\n",
-				    __func__, msr);
-			}
+			syscfg = rdmsr(MSR_SYS_CFG);
+			rmpbase = rdmsr(MSR_RMP_BASE);
+			rmpend = rdmsr(MSR_RMP_END);
+			printf("%s: %llb 0x%llx 0x%llx\n",
+			    ci->ci_dev->dv_xname, syscfg, MSR_SYS_CFG_BITS,
+			    rmpbase, rmpend);
 		}
 #endif
 	}

@@ -703,7 +703,16 @@
 #define MSR_INT_PEN_MSG	0xc0010055	/* Interrupt pending message */
 
 #define MSR_SYS_CFG	0xc0010010	/* System Configuration */
-#define		SYS_MEMENCRYPTIONMODEEN	0x00800000	/* SEV */
+#define		SYS_CFG_MFDE	(1ULL << 18)
+#define		SYS_CFG_MFDM	(1ULL << 19)
+#define		SYS_CFG_MVDM	(1ULL << 20)
+#define		SYS_CFG_TOM2	(1ULL << 21)
+#define		SYS_CFG_FWB	(1ULL << 22)
+#define		SYS_CFG_MEME	(1ULL << 23)
+#define		SYS_CFG_SNPE	(1ULL << 24)
+#define		SYS_CFG_VMPLE	(1ULL << 25)
+#define		SYS_CFG_HMKE	(1ULL << 26)
+#define MSR_SYS_CFG_BITS "\20\023MFDE\024MFDM\025MVDM\026TOM2\027FWB\030MEME\031SNPE\032VMPLE\033HMKE"
 
 #define MSR_DE_CFG	0xc0011029	/* Decode Configuration */
 #define	DE_CFG_721	0x00000001	/* errata 721 */
@@ -736,6 +745,9 @@
 #define		SEV_STAT_ENABLED	0x00000001
 #define		SEV_STAT_ES_ENABLED	0x00000002
 #define		SEV_STAT_SNP_ACTIVE	0x00000004
+
+#define MSR_RMP_BASE	0xc0010132	/* RMP Base */
+#define MSR_RMP_END	0xc0010133	/* RMP End */
 
 #define	MSR_LS_CFG	0xc0011020
 #define		LS_CFG_DIS_LS2_SQUISH	0x02000000
