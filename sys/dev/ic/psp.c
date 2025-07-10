@@ -776,18 +776,20 @@ int
 psp_snp_get_pstatus(struct psp_softc *sc,
     struct psp_snp_platform_status *ustatus)
 {
-	struct psp_snp_platform_status	*status;
+	struct psp_cmdbuf_snp_platform_status *status;
 	int				 error;
 
-	status = (struct psp_snp_platform_status *)sc->sc_cmd_kva;
+	status = (struct psp_cmdbuf_snp_platform_status *)sc->sc_cmd_kva;
 	bzero(status, sizeof(*status));
+	status->status_paddr = sc->sc_cmd_map->dm_segs[0].ds_addr +
+	    sizeof(status->status_paddr);
 
 	error = ccp_docmd(sc, PSP_CMD_SNP_PLATFORMSTATUS,
 	    sc->sc_cmd_map->dm_segs[0].ds_addr);
 	if (error)
 		return (error);
 
-	bcopy(status, ustatus, sizeof(*ustatus));
+	bcopy(&status->pstatus, ustatus, sizeof(*ustatus));
 
 	return (0);
 }
@@ -915,6 +917,7 @@ pledge_ioctl_psp(struct proc *p, long com)
 	case PSP_IOC_ACTIVATE:
 	case PSP_IOC_ENCRYPT_STATE:
 	case PSP_IOC_GUEST_SHUTDOWN:
+	case PSP_IOC_SNP_GET_PSTATUS:
 		return (0);
 	default:
 		return (pledge_fail(p, EPERM, PLEDGE_VMM));

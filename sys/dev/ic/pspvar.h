@@ -244,20 +244,40 @@ struct psp_guest_shutdown {
 	uint32_t		handle;
 } __packed;
 
-/* Selection of PSP commands of the SEV-SNP ABI Version 1.55 */
+/* Selection of PSP commands of the SEV-SNP ABI Version 1.58 */
 
-#define PSP_CMD_SNP_PLATFORMSTATUS	0x81
+#define PSP_CMD_SNP_PLATFORMSTATUS	0x83
 
 struct psp_snp_platform_status {
 	uint8_t			api_major;
 	uint8_t			api_minor;
 	uint8_t			state;
-	uint8_t			is_rmp_init;
+	uint8_t			features1;
 	uint32_t		build;
-	uint32_t		features;
+	uint32_t		features2;
 	uint32_t		guest_count;
 	uint64_t		current_tcb;
 	uint64_t		reported_tcb;
+} __packed;
+
+#define PSP_SNP_F_IS_RMP_INIT			(1 << 0)
+#define PSP_SNP_F_ALIAS_CHECK_COMPLETE		(1 << 1)
+#define PSP_SNP_F_IS_TIO_INIT			(1 << 3)
+#define PSP_SNP_F_BITS1 "\020\01IS_RMP_INI\02ALIAS_CHECK_COMPLETE\04IS_TIO_INIT"
+
+#define PSP_SNP_F_MASK_CHIP_ID			(1 << 0)
+#define PSP_SNP_F_MASK_CHIP_KEY			(1 << 1)
+#define PSP_SNP_F_VLEK_EN			(1 << 2)
+#define PSP_SNP_F_FEATURE_INFO			(1 << 3)
+#define PSP_SNP_F_RAPL_DIS			(1 << 4)
+#define PSP_SNP_F_CIPHERTEXT_HIDING_DRAM_CAP	(1 << 5)
+#define PSP_SNP_F_CIPHERTEXT_HIDING_DRAM_EN	(1 << 6)
+#define PSP_SNP_F_IS_TIO_EN			(1 << 7)
+#define PSP_SNP_F_BITS2 "\020\01MASK_CHIP_ID\002MASK_CHIP_KEY\003VLEK_EN\004FEATURE_INFO\005RAPL_DIS\006CIPHERTEXT_HIDING_DRAM_CAP\007CIPHERTEXT_HIDING_DRAM_EN\010IS_TIO_EN"
+
+struct psp_cmdbuf_snp_platform_status {
+	uint64_t		status_paddr;
+	struct psp_snp_platform_status pstatus;
 } __packed;
 
 #define PSP_IOC_GET_PSTATUS	_IOR('P', 0, struct psp_platform_status)
