@@ -289,11 +289,22 @@ ctl_snp_status(struct parse_result *res, int argc, char *argv[])
 
 	printf("SNP platform status:\nmajor\t\t%hhd\nminor\t\t%hhd\n"
 	    "build\t\t%d\n", snppst.api_major, snppst.api_minor, snppst.build);
-	printf("state\t\t%s\nfeatures1\t0x%hhx\nfeatures2\t0x%x\nguests\t\t%d\n"
-	    "current tcb\t0x%llx\nreported tcb\t0x%llx\n",
-	    pspctl_snp_state(&snppst), snppst.is_rmp_init,
-	    snppst.features, snppst.guest_count, snppst.current_tcb,
-	    snppst.reported_tcb);
+	printf("state\t\t%s\nfeatures1\t0x%hhx\nfeatures2\t0x%x\n"
+	    "guests\t\t%d\n",
+	    pspctl_snp_state(&snppst), snppst.features1,
+	    snppst.features2, snppst.guest_count);
+	printf("\ncurrent TCB\nmicrocode\t%llu\nSNP\t\t%llu\nTEE\t\t%llu\n"
+	    "bootloader\t%llu\n",
+	    (snppst.current_tcb >> 56) & 0xff,
+	    (snppst.current_tcb >> 48) & 0xff,
+	    (snppst.current_tcb >> 8) & 0xff,
+	    (snppst.current_tcb >> 0) & 0xff);
+	printf("\nreported TCB\nmicrocode\t%llu\nSNP\t\t%llu\nTEE\t\t%llu\n"
+	    "bootloader\t%llu\n",
+	    (snppst.reported_tcb >> 56) & 0xff,
+	    (snppst.reported_tcb >> 48) & 0xff,
+	    (snppst.reported_tcb >> 8) & 0xff,
+	    (snppst.reported_tcb >> 0) & 0xff);
 
 	return (0);
 }
