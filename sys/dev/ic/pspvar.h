@@ -184,7 +184,7 @@ struct psp_report {
 	uint32_t		report_policy;
 	uint32_t		report_sig_usage;
 	uint32_t		report_sig_algo;
-	uint32_t		reserved2;
+	uint32_t		reserved;
 	uint8_t			report_sig1[144];
 } __packed;
 
@@ -247,6 +247,7 @@ struct psp_guest_shutdown {
 /* Selection of PSP commands of the SEV-SNP ABI Version 1.58 */
 
 #define PSP_CMD_SNP_PLATFORMSTATUS	0x83
+#define PSP_CMD_SNP_INIT_EX		0x85
 
 struct psp_snp_platform_status {
 	uint8_t			api_major;
@@ -279,6 +280,20 @@ struct psp_cmdbuf_snp_platform_status {
 	uint64_t		status_paddr;
 	struct psp_snp_platform_status pstatus;
 } __packed;
+
+struct psp_snp_init_ex {
+	uint32_t		features;
+	uint32_t		reserved1;
+	uint64_t		list_paddr;
+	uint16_t		max_snp_asid;
+	uint8_t			reserved2[46];
+} __packed;
+
+#define PSP_SIEX_INIT_RMP			(1 << 0)
+#define PSP_SIEX_LIST_PADDR_EN			(1 << 1)
+#define PSP_SIEX_RAPL_DIS			(1 << 2)
+#define PSP_SIEX_CIPHERTEXT_HIDING_DRAM_EN	(1 << 3)
+#define PSP_SIEX_TIO_EN				(1 << 4)
 
 #define PSP_IOC_GET_PSTATUS	_IOR('P', 0, struct psp_platform_status)
 #define PSP_IOC_DF_FLUSH	_IO('P', 1)
