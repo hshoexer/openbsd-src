@@ -240,9 +240,10 @@ ctl_status(struct parse_result *res, int argc, char *argv[])
 	if (ioctl(fd, PSP_IOC_GET_PSTATUS, &pst) < 0)
 		err(1, "ioctl");
 
-	printf("platform status:\nmajor\t%hhd\nminor\t%hhd\nbuild\t%hhd\n",
+	printf("SEV platform status:\nmajor\t\t%hhd\nminor\t\t%hhd\n"
+	    "build\t\t%hhd\n",
 	    pst.api_major, pst.api_minor, (pst.cfges_build >> 24) & 0xff);
-	printf("state\t%s\nowner\t%d\nSEV-ES\t%d\nguests\t%d\n",
+	printf("state\t\t%s\nowner\t\t%d\nSEV-ES\t\t%d\nguests\t\t%d\n",
 	    pspctl_state(&pst), (pst.owner & 0x1), (pst.cfges_build & 0x1),
 	    pst.guest_count);
 
@@ -286,9 +287,9 @@ ctl_snp_status(struct parse_result *res, int argc, char *argv[])
 	if (close(fd) < 0)
 		err(1, "close");
 
-	printf("snp platform status:\nmajor\t0x%hhx\nminor\t0x%hhx\n"
-	    "build\t0x%x\n", snppst.api_major, snppst.api_minor, snppst.build);
-	printf("state\t%srmp_init\t0x%hhx\nfeatures\t0x%x\nguests\t%d\n"
+	printf("SNP platform status:\nmajor\t\t%hhd\nminor\t\t%hhd\n"
+	    "build\t\t%d\n", snppst.api_major, snppst.api_minor, snppst.build);
+	printf("state\t\t%s\nfeatures1\t0x%hhx\nfeatures2\t0x%x\nguests\t\t%d\n"
 	    "current tcb\t0x%llx\nreported tcb\t0x%llx\n",
 	    pspctl_snp_state(&snppst), snppst.is_rmp_init,
 	    snppst.features, snppst.guest_count, snppst.current_tcb,
