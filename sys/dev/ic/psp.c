@@ -41,6 +41,8 @@ struct psp_softc {
 
 	bus_dma_tag_t		sc_dmat;
 
+	uint32_t		sc_capabilities;
+
 	bus_size_t		sc_reg_inten;
 	bus_size_t		sc_reg_intsts;
 	bus_size_t		sc_reg_cmdresp;
@@ -125,6 +127,7 @@ psp_attach(struct device *parent, struct device *self, void *aux)
 	sc->sc_iot = arg->iot;
 	sc->sc_ioh = arg->ioh;
 	sc->sc_dmat = arg->dmat;
+	sc->sc_capabilities = arg->capabilities;
 	if (arg->version == 1) {
 		sc->sc_reg_inten = PSPV1_REG_INTEN;
 		sc->sc_reg_intsts = PSPV1_REG_INTSTS;
