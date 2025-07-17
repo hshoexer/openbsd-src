@@ -37,9 +37,9 @@
 
 #include "pspctl.h"
 
-__dead void	usage(void);
+__dead void	usage(int);
 __dead void	ctl_usage(struct ctl_command *);
-int		parse(int, char *[]);
+int		parse(int, char *[], int);
 int		ctl_status(struct parse_result *, int , char *[]);
 int		ctl_deactivate(struct parse_result *, int , char *[]);
 int		ctl_decommission(struct parse_result *, int , char *[]);
@@ -68,11 +68,19 @@ struct ctl_command ctl_commands[] = {
 };
 
 __dead void
-usage(void)
+usage(int help)
 {
 	extern char	*__progname;
+	int		 i;
 
-	fprintf(stderr, "usage:\t%s [-h] command [argv ...]\n", __progname);
+	if (help) {
+		for (i = 0; ctl_commands[i]. name != NULL; i++) {
+			fprintf(stderr, "usage:\t%s [-h] %s %s\n", __progname,
+			    ctl_commands[i].name, ctl_commands[i].usage);
+		}
+	} else
+		fprintf(stderr, "usage:\t%s [-h] command [argv ...]\n",
+		    __progname);
 
 	exit(1);
 }
@@ -91,14 +99,15 @@ ctl_usage(struct ctl_command *ctl)
 int
 main(int argc, char *argv[])
 {
-	int	ch;
+	int	ch, help = 0;
 
 	while ((ch = getopt(argc, argv, "h")) != -1) {
 		switch (ch) {
 		case 'h':
+			help++;
 			/* FALLTHROUGH */
 		default:
-			usage();
+			usage(help);
 			/* NOTREACHED */
 		}
 	}
@@ -108,13 +117,13 @@ main(int argc, char *argv[])
 	optind = 1;
 
 	if (argc < 1)
-		usage();
+		usage(help);
 
-	return (parse(argc, argv));
+	return (parse(argc, argv, help));
 }
 
 int
-parse(int argc, char *argv[])
+parse(int argc, char *argv[], int help)
 {
 	struct ctl_command	*ctl = NULL;
 	struct parse_result	 res;
@@ -128,7 +137,7 @@ parse(int argc, char *argv[])
 			if (ctl != NULL) {
 				fprintf(stderr,
 				    "ambiguous argument: %s\n", argv[0]);
-				usage();
+				usage(help);
 			}
 			ctl = &ctl_commands[i];
 		}
@@ -136,7 +145,7 @@ parse(int argc, char *argv[])
 
 	if (ctl == NULL) {
 		fprintf(stderr, "unknown argument: %s\n", argv[0]);
-		usage();
+		usage(help);
 	}
 
 	res.action = ctl->action;
