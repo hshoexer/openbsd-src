@@ -39,6 +39,7 @@
 
 #include <sys/types.h>
 
+#include <machine/atomic.h>
 #include <machine/specialreg.h>
 
 #if defined(_KERNEL) && !defined (_STANDALONE)
@@ -460,6 +461,45 @@ vmterminate(void)
 		"	jmp	1b					;"
 	    : :);
 }
+
+#define ISSET(t, f)     ((t) & (f))
+
+extern volatile long sevsnpen_wait;
+
+static __inline void
+sevsnp_enable(void)
+{
+	uint64_t	syscfg, hwcr;
+
+	wrmsr(MSR_AMD_VM_HSAVE_PA, 0);
+
+	hwcr = rdmsr_locked(MSR_HWCR, OPTERON_MSR_PASSCODE);
+	if (!ISSET(hwcr, HWCR_SMMLOCK)) {
+		hwcr |= HWCR_SMMLOCK;
+		wrmsr_locked(MSR_HWCR, OPTERON_MSR_PASSCODE, hwcr);
+	}
+
+	syscfg = rdmsr(MSR_SYS_CFG);
+	if (!ISSET(syscfg, SYS_CFG_SNPE)) {
+		syscfg |= (SYS_CFG_MEME | SYS_CFG_SNPE | SYS_CFG_VMPLE);
+		wrmsr(MSR_SYS_CFG, syscfg);
+	}
+
+#ifdef MULTIPROCESSOR
+	atomic_dec_long(&sevsnpen_wait);
+#endif
+
+}
+
+#ifdef MULTIPROCESSOR
+void sevsnp_enable_on_allcpus_acked(void);
+#else
+static inline void
+sevsnp_enable_on_allcpus_acked(void)
+{
+	sevsnp_enable();
+}
+#endif
 
 void amd64_errata(struct cpu_info *);
 void cpu_ucode_setup(void);
