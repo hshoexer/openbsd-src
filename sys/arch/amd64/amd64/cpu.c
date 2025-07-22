@@ -1576,6 +1576,47 @@ sevsnp_enable_on_allcpus_acked(void)
 	while (sevsnpen_wait != 0)
 		CPU_BUSY_CYCLE();
 }
+
+volatile long mfdm_wait __attribute__((section(".kudata")));
+
+void
+mfdm_enable_on_allcpus_acked(void)
+{
+	struct cpu_info *ci, *self = curcpu();;
+	CPU_INFO_ITERATOR cii;
+	long wait = 0;
+	u_int64_t mask = 0;
+	int s;
+
+	CPU_INFO_FOREACH(cii, ci) {
+		if (ci == self)
+			continue;
+		mask |= (1ULL << ci->ci_cpuid);
+		wait++;
+	}
+	wait++;
+
+	KASSERT(wait > 0);
+
+	s = splvm();
+	while (atomic_cas_ulong(&mfdm_wait, 0 , wait) != 0) {
+		while (mfdm_wait != 0) {
+			CPU_BUSY_CYCLE();
+		}
+	}
+
+	CPU_INFO_FOREACH(cii, ci) {
+		if ((mask & (1ULL << ci->ci_cpuid)) == 0)
+			continue;
+		x86_send_ipi(ci, X86_IPI_MFDMEN);
+	}
+	splx(s);
+
+	mfdm_enable();
+
+	while (mfdm_wait != 0)
+		CPU_BUSY_CYCLE();
+}
 #endif /* MULTIPROCESSOR */
 
 int cpu_suspended;

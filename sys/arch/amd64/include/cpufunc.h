@@ -501,6 +501,36 @@ sevsnp_enable_on_allcpus_acked(void)
 }
 #endif
 
+extern volatile long mfdm_wait;
+
+static __inline void
+mfdm_enable(void)
+{
+	uint64_t	syscfg;
+
+	syscfg = rdmsr(MSR_SYS_CFG);
+	if (!ISSET(syscfg, SYS_CFG_MFDM)) {
+		syscfg |= SYS_CFG_MFDM;
+		wrmsr(MSR_SYS_CFG, syscfg);
+	}
+
+#ifdef MULTIPROCESSOR
+	atomic_dec_long(&mfdm_wait);
+#endif
+
+}
+
+#ifdef MULTIPROCESSOR
+void mfdm_enable_on_allcpus_acked(void);
+#else
+static inline void
+mfdm_enable_on_allcpus_acked(void)
+{
+	mfdm_enable();
+}
+#endif
+
+
 void amd64_errata(struct cpu_info *);
 void cpu_ucode_setup(void);
 void cpu_ucode_apply(struct cpu_info *);
