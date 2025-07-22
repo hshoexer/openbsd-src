@@ -62,6 +62,7 @@ void x86_64_ipi_nop(struct cpu_info *);
 void x86_64_ipi_halt(struct cpu_info *);
 void x86_64_ipi_wbinvd(struct cpu_info *);
 void x86_64_ipi_sevsnp_enable(struct cpu_info *);
+void x86_64_ipi_mfdm_enable(struct cpu_info *);
 
 #if NVMM > 0
 void x86_64_ipi_vmclear_vmm(struct cpu_info *);
@@ -110,6 +111,7 @@ void (*ipifunc[X86_NIPI])(struct cpu_info *) =
 #endif
 	x86_64_ipi_wbinvd,
 	x86_64_ipi_sevsnp_enable,
+	x86_64_ipi_mfdm_enable,
 };
 
 void
@@ -176,4 +178,10 @@ void
 x86_64_ipi_sevsnp_enable(struct cpu_info *ci)
 {
 	sevsnp_enable();
+}
+
+void
+x86_64_ipi_mfdm_enable(struct cpu_info *ci)
+{
+	mfdm_enable();
 }
