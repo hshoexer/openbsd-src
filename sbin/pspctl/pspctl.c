@@ -47,6 +47,7 @@ int		ctl_attest(struct parse_result *, int , char *[]);
 int		ctl_snp_status(struct parse_result *, int , char *[]);
 int		ctl_shutdown(struct parse_result *, int , char *[]);
 int		ctl_init(struct parse_result *, int , char *[]);
+int		ctl_snp_init(struct parse_result *, int , char *[]);
 #if 0
 int		ctl_firmware(struct parse_result *, int , char *[]);
 #endif
@@ -60,6 +61,7 @@ struct ctl_command ctl_commands[] = {
 	{ "snp_status",		CMD_SNP_STATUS,	ctl_snp_status,		"" },
 	{ "shutdown",		CMD_SHUTDOWN,	ctl_shutdown,		"" },
 	{ "init",		CMD_INIT,	ctl_init,		"" },
+	{ "snp_init",		CMD_SNP_INIT,	ctl_snp_init,		"" },
 #if 0
 	{ "firmware",		CMD_FIRMWARE,	ctl_firmware,		"file" },
 #endif
@@ -438,6 +440,24 @@ ctl_init(struct parse_result *res, int argc, char *argv[])
 	if ((fd = open(PSP_NODE, O_RDWR)) < 0)
 		err(1, "open");
 	if (ioctl(fd, PSP_IOC_INIT) < 0)
+		err(1, "ioctl");
+	if (close(fd) < 0)
+		err(1, "close");
+
+	return (0);
+}
+
+int
+ctl_snp_init(struct parse_result *res, int argc, char *argv[])
+{
+	int	fd;
+
+	if (argc != 1)
+		ctl_usage(res->ctl);
+
+	if ((fd = open(PSP_NODE, O_RDWR)) < 0)
+		err(1, "open");
+	if (ioctl(fd, PSP_IOC_SNP_INIT) < 0)
 		err(1, "ioctl");
 	if (close(fd) < 0)
 		err(1, "close");
