@@ -303,6 +303,14 @@ struct psp_range_list {
 	struct psp_range	ranges;		/* just one for now */
 } __packed;
 
+#define SNP_F_IOMMU_SNP_SHUTDOWN	(1 << 0)
+#define SNP_F_X86_SNP_SHUTDOWN		(1 << 1)
+
+struct psp_snp_shutdown_ex {
+	uint32_t		length;
+	uint32_t		flags;
+} __packed;
+
 #define SNP_F_ECX_X86SNPSHUTDOWN	(1 << 0)
 #define SNP_F_ECX_RAPIDIS		(1 << 1)
 #define SNP_F_ECX_CIPERTEXTHDINGDRAM	(1 << 2)
@@ -357,6 +365,7 @@ struct psp_snp_feature_info {
 #define PSP_IOC_INIT		_IO('P', 12)
 #define PSP_IOC_SHUTDOWN	_IO('P', 13)
 #define PSP_IOC_SNP_INIT	_IO('P', 14)
+#define PSP_IOC_SNP_SHUTDOWN	_IO('P', 15)
 #define PSP_IOC_ENCRYPT_STATE	_IOW('P', 254, struct psp_encrypt_state)
 #define PSP_IOC_GUEST_SHUTDOWN	_IOW('P', 255, struct psp_guest_shutdown)
 
