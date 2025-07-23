@@ -248,6 +248,8 @@ struct psp_guest_shutdown {
 
 #define PSP_CMD_SNP_PLATFORMSTATUS	0x83
 #define PSP_CMD_SNP_INIT_EX		0x85
+#define PSP_CMD_SNP_SHUTDOWN_EX		0x86
+#define PSP_CMD_SNP_FEATURE_INFO	0xce
 
 struct psp_snp_platform_status {
 	uint8_t			api_major;
@@ -299,6 +301,38 @@ struct psp_range_list {
 	uint32_t		n;
 	uint32_t		reserved;
 	struct psp_range	ranges;		/* just one for now */
+} __packed;
+
+#define SNP_F_ECX_X86SNPSHUTDOWN	(1 << 0)
+#define SNP_F_ECX_RAPIDIS		(1 << 1)
+#define SNP_F_ECX_CIPERTEXTHDINGDRAM	(1 << 2)
+#define SNP_F_ECX_AES256XTSDPOLICY	(1 << 3)
+#define SNP_F_ECX_CXLALLOWPOLICY	(1 << 4)
+#define SNP_F_ECX_ECCMEMREPORTING	(1 << 5)
+#define SNP_F_ECX_PREINITNONSEGRMP	(1 << 6)
+#define SNP_F_ECX_REINITSEGRMP		(1 << 7)
+#define SNP_F_ECX_ALIASCHECK		(1 << 8)
+#define SNP_F_ECX_RESERVED		(1 << 9)
+#define SNP_F_ECX_HOSTGUESTATTACK	(1 << 10)
+#define SNP_F_ECX_SECURETSC		(1 << 11)
+#define SNP_F_ECX_VERIFYMIT		(1 << 12)
+#define SNP_F_ECX_BITS "\020\01X86_SNP_SHUTDOWN\02RAPL_DIS\03CIPERTEXT_HIDING_DRAM\04AES_256_XTS_POLICY\05CXL_ALLOW_POLICY\06ECC_MEM_REPORTING\07PREINIT_NON_SEG_RMP\010PREINIT_SEG_RM_\011ALIAS_CHECK\012RESERVED\013HOST_GUEST_ATTACK\014SECURE_TSC\015VERIFY_MIT"
+
+#define SNP_F_EBX_SEVLEGACY		(1<< 0)
+#define SNP_F_EBX_SEVTIO		(1 << 1)
+#define SNP_F_EBX_BITS "\020\01SEV_LEGACY\02SEV_TIO"
+
+struct feature_info {
+	uint32_t		eax;
+	uint32_t		ebx;
+	uint32_t		ecx;
+	uint32_t		edx;
+} __packed;
+
+struct psp_snp_feature_info {
+	uint32_t		length;
+	uint32_t		ecx_in;
+	uint64_t		feature_info_paddr;
 } __packed;
 
 #define PSP_SIEX_INIT_RMP			(1 << 0)

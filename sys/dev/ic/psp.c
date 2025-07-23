@@ -838,6 +838,33 @@ psp_guest_shutdown(struct psp_softc *sc, struct psp_guest_shutdown *ugshutdown)
 }
 
 int
+psp_snp_get_features(struct psp_softc *sc)
+{
+	struct psp_snp_feature_info	*info;
+	struct feature_info		*finfo;
+	int				 error;
+
+	info = (struct psp_snp_feature_info *)sc->sc_cmd_kva;
+	bzero(info, sizeof(*info));
+	info->length = sizeof(*info);
+
+	finfo = (struct feature_info *)(sc->sc_cmd_kva + sizeof(*info));
+	bzero(finfo, sizeof(*finfo));
+	info->feature_info_paddr = sc->sc_cmd_map->dm_segs[0].ds_addr +
+	    sizeof(*info);
+
+	error = ccp_docmd(sc, PSP_CMD_SNP_FEATURE_INFO,
+	    sc->sc_cmd_map->dm_segs[0].ds_addr);
+	if (error)
+		return (error);
+
+	printf("%s: 0x%x %b %b\n", __func__, finfo->eax,
+	    finfo->ebx, SNP_F_EBX_BITS, finfo->ecx, SNP_F_ECX_BITS);
+
+	return (0);
+}
+
+int
 psp_snp_get_pstatus(struct psp_softc *sc,
     struct psp_snp_platform_status *ustatus)
 {
@@ -854,7 +881,13 @@ psp_snp_get_pstatus(struct psp_softc *sc,
 	if (error)
 		return (error);
 
+	printf("%s: %b %b\n", __func__, status->pstatus.features1,
+	    PSP_SNP_F_BITS1, status->pstatus.features2, PSP_SNP_F_BITS2);
+
 	bcopy(&status->pstatus, ustatus, sizeof(*ustatus));
+
+	if (ISSET(status->pstatus.features2, PSP_SNP_F_FEATURE_INFO))
+		return (psp_snp_get_features(sc));
 
 	return (0);
 }
