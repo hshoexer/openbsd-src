@@ -440,6 +440,23 @@ psp_shutdown(struct psp_softc *sc)
 }
 
 int
+psp_snp_shutdown(struct psp_softc *sc)
+{
+	struct psp_snp_shutdown_ex	*shutdown;
+	int				 error;
+
+	shutdown = (struct psp_snp_shutdown_ex *)sc->sc_cmd_kva;
+	bzero(shutdown, sizeof(*shutdown));
+
+	error = ccp_docmd(sc, PSP_CMD_SNP_SHUTDOWN_EX,
+	    sc->sc_cmd_map->dm_segs[0].ds_addr);
+	if (error)
+		return (error);
+
+	return (0);
+}
+
+int
 psp_get_pstatus(struct psp_softc *sc, struct psp_platform_status *ustatus)
 {
 	struct psp_platform_status	*status;
@@ -947,6 +964,9 @@ pspioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
 		break;
 	case PSP_IOC_SHUTDOWN:
 		error = psp_shutdown(sc);
+		break;
+	case PSP_IOC_SNP_SHUTDOWN:
+		error = psp_snp_shutdown(sc);
 		break;
 	case PSP_IOC_GET_PSTATUS:
 		error = psp_get_pstatus(sc, (struct psp_platform_status *)data);
