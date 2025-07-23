@@ -289,6 +289,18 @@ struct psp_snp_init_ex {
 	uint8_t			reserved2[46];
 } __packed;
 
+struct psp_range {
+	uint64_t		base;
+	uint32_t		page_count;
+	uint32_t		reserved;
+} __packed;
+
+struct psp_range_list {
+	uint32_t		n;
+	uint32_t		reserved;
+	struct psp_range	ranges;		/* just one for now */
+} __packed;
+
 #define PSP_SIEX_INIT_RMP			(1 << 0)
 #define PSP_SIEX_LIST_PADDR_EN			(1 << 1)
 #define PSP_SIEX_RAPL_DIS			(1 << 2)
