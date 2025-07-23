@@ -73,6 +73,7 @@ struct psp_softc {
 
 int	psp_get_pstatus(struct psp_softc *, struct psp_platform_status *);
 int	psp_init(struct psp_softc *, struct psp_init *);
+int	psp_snp_init(struct psp_softc *);
 int	psp_reinit(struct psp_softc *);
 int	psp_match(struct device *, void *, void *);
 void	psp_attach(struct device *, struct device *, void *);
@@ -256,8 +257,11 @@ ccp_docmd(struct psp_softc *sc, int cmd, uint64_t paddr)
 
 	/* Did PSP sent a response code? */
 	if (status & PSP_CMDRESP_RESPONSE) {
-		if ((status & PSP_STATUS_MASK) != PSP_STATUS_SUCCESS)
+		if ((status & PSP_STATUS_MASK) != PSP_STATUS_SUCCESS) {
+			/* XXX hshoexer */
+			printf("%s: status 0x%x\n", __func__, status);
 			return (EIO);
+		}
 	}
 
 	return (0);
@@ -277,6 +281,55 @@ psp_init(struct psp_softc *sc, struct psp_init *uinit)
 	init->tmr_length = uinit->tmr_length;
 
 	error = ccp_docmd(sc, PSP_CMD_INIT, sc->sc_cmd_map->dm_segs[0].ds_addr);
+	if (error)
+		return (error);
+
+	wbinvd_on_all_cpus_acked();
+
+	sc->sc_flags |= PSPF_INITIALIZED;
+
+	return (0);
+}
+
+int
+psp_snp_init(struct psp_softc *sc)
+{
+	struct psp_snp_init_ex	*init;
+	struct psp_range_list	*rangelist;
+	uint64_t		 rmpbase, rmpend;
+	size_t			 rmpsize;
+	vaddr_t			 rmpva;
+	int			 error;
+
+	init = (struct psp_snp_init_ex *)sc->sc_cmd_kva;
+	bzero(init, sizeof(*init));
+	init->features |= PSP_SIEX_INIT_RMP;
+
+	rmpbase = rdmsr(MSR_RMP_BASE);
+	rmpend = rdmsr(MSR_RMP_END);
+	if (rmpbase > rmpend)
+		return (ENXIO);
+	rmpsize = rmpend + 1 - rmpbase;
+	rmpva = PMAP_DIRECT_MAP(rmpbase);
+	bzero((void *)rmpva, rmpsize);
+	printf("%s: 0x%llx 0x%llx %zu 0x%lx\n", __func__, rmpbase, rmpend,
+	    rmpsize, rmpva);
+
+	rangelist = (struct psp_range_list *)(sc->sc_cmd_kva + sizeof(*init));
+	bzero(rangelist, sizeof(*rangelist));
+	rangelist->n = 1;
+	rangelist->ranges.base = rmpbase;
+	rangelist->ranges.page_count = atop(rmpsize);
+	printf("%s: init %p rangelist %p base 0x%llx cnt %u\n", __func__,
+	    init, rangelist, rangelist->ranges.base,
+	    rangelist->ranges.page_count);
+
+	wbinvd_on_all_cpus_acked();
+	mfdm_enable_on_allcpus_acked();
+	sevsnp_enable_on_allcpus_acked();
+
+	error = ccp_docmd(sc, PSP_CMD_SNP_INIT_EX,
+	    sc->sc_cmd_map->dm_segs[0].ds_addr);
 	if (error)
 		return (error);
 
