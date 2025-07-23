@@ -322,6 +322,7 @@ struct psp_range_list {
 #define PSP_IOC_SNP_GET_PSTATUS	_IOR('P', 11, struct psp_snp_platform_status)
 #define PSP_IOC_INIT		_IO('P', 12)
 #define PSP_IOC_SHUTDOWN	_IO('P', 13)
+#define PSP_IOC_SNP_INIT	_IO('P', 14)
 #define PSP_IOC_ENCRYPT_STATE	_IOW('P', 254, struct psp_encrypt_state)
 #define PSP_IOC_GUEST_SHUTDOWN	_IOW('P', 255, struct psp_guest_shutdown)
 

@@ -74,7 +74,7 @@ struct psp_softc {
 int	psp_get_pstatus(struct psp_softc *, struct psp_platform_status *);
 int	psp_init(struct psp_softc *, struct psp_init *);
 int	psp_snp_init(struct psp_softc *);
-int	psp_reinit(struct psp_softc *);
+int	psp_reinit(struct psp_softc *, int);
 int	psp_match(struct device *, void *, void *);
 void	psp_attach(struct device *, struct device *, void *);
 int	psp_load_ucode(struct psp_softc *);
@@ -222,7 +222,8 @@ ccp_wait(struct psp_softc *sc, uint32_t *status, int poll)
 		return (EWOULDBLOCK);
 	}
 
-	error = msleep_nsec(sc, &sc->psp_lock, PWAIT, "psp", SEC_TO_NSEC(2));
+	/* XXX hshoexer: timeout */
+	error = msleep_nsec(sc, &sc->psp_lock, PWAIT, "psp", SEC_TO_NSEC(60));
 	if (error)
 		return (error);
 
@@ -320,9 +321,12 @@ psp_snp_init(struct psp_softc *sc)
 	rangelist->n = 1;
 	rangelist->ranges.base = rmpbase;
 	rangelist->ranges.page_count = atop(rmpsize);
-	printf("%s: init %p rangelist %p base 0x%llx cnt %u\n", __func__,
-	    init, rangelist, rangelist->ranges.base,
-	    rangelist->ranges.page_count);
+	init->features |= PSP_SIEX_LIST_PADDR_EN;
+	init->list_paddr = sc->sc_cmd_map->dm_segs[0].ds_addr + sizeof(*init);
+	printf("%s: init %p/0x%lx rangelist %p/0x%lx base 0x%llx cnt %u\n",
+	    __func__, init,  sc->sc_cmd_map->dm_segs[0].ds_addr,
+	    rangelist,  sc->sc_cmd_map->dm_segs[0].ds_addr + sizeof(*init),
+	    rangelist->ranges.base, rangelist->ranges.page_count);
 
 	wbinvd_on_all_cpus_acked();
 	mfdm_enable_on_allcpus_acked();
@@ -341,7 +345,7 @@ psp_snp_init(struct psp_softc *sc)
 }
 
 int
-psp_reinit(struct psp_softc *sc)
+psp_reinit(struct psp_softc *sc, int snp)
 {
 	struct psp_init	init;
 	size_t		size;
@@ -380,12 +384,17 @@ psp_reinit(struct psp_softc *sc)
 	if (error)
 		goto fail_3;
 
-	memset(&init, 0, sizeof(init));
-	init.enable_es = 1;
-	init.tmr_length = PSP_TMR_SIZE;
-	init.tmr_paddr = sc->sc_tmr_map->dm_segs[0].ds_addr;
-	if ((error = psp_init(sc, &init)) != 0)
-		goto fail_4;
+	if (snp) {
+		if ((error = psp_snp_init(sc)) != 0)
+			goto fail_4;
+	} else {
+		memset(&init, 0, sizeof(init));
+		init.enable_es = 1;
+		init.tmr_length = PSP_TMR_SIZE;
+		init.tmr_paddr = sc->sc_tmr_map->dm_segs[0].ds_addr;
+		if ((error = psp_init(sc, &init)) != 0)
+			goto fail_4;
+	}
 
 	return (0);
 
@@ -859,11 +868,13 @@ pspopen(dev_t dev, int flag, int mode, struct proc *p)
 	if (sc == NULL)
 		return (ENXIO);
 
+#if 0
 	/* Ignore error, proceed without new firmware. */
 	(void) psp_load_ucode(sc);
 
 	if (!(sc->sc_flags & PSPF_INITIALIZED))
-		return (psp_reinit(sc));
+		return (psp_reinit(sc, 0));
+#endif
 
 	return (0);
 }
@@ -896,7 +907,10 @@ pspioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
 
 	switch (cmd) {
 	case PSP_IOC_INIT:
-		error = psp_reinit(sc);
+		error = psp_reinit(sc, 0);
+		break;
+	case PSP_IOC_SNP_INIT:
+		error = psp_reinit(sc, 1);
 		break;
 	case PSP_IOC_SHUTDOWN:
 		error = psp_shutdown(sc);
