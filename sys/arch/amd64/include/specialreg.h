@@ -714,6 +714,13 @@
 #define		SYS_CFG_HMKE	(1ULL << 26)
 #define MSR_SYS_CFG_BITS "\20\023MFDE\024MFDM\025MVDM\026TOM2\027FWB\030MEME\031SNPE\032VMPLE\033HMKE"
 
+#define		MSR_IORR_BASE0	0xc0010016
+#define		MSR_IORR_MASK0	0xc0010017
+#define		MSR_IORR_BASE1	0xc0010018
+#define		MSR_IORR_MASK1	0xc0010019
+#define		MSR_TOP_MEM	0xc001001a
+#define		MSR_TOP_MEM2	0xc001001d
+
 #define MSR_DE_CFG	0xc0011029	/* Decode Configuration */
 #define	DE_CFG_721	0x00000001	/* errata 721 */
 #define DE_CFG_SERIALIZE_LFENCE	(1 << 1)	/* Enable serializing lfence */
