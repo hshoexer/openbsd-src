@@ -30,6 +30,7 @@
 #include <uvm/uvm_extern.h>
 #include <crypto/xform.h>
 #include <machine/vmmvar.h>
+#include <machine/biosvar.h>
 
 #include <dev/ic/ccpvar.h>
 #include <dev/ic/pspvar.h>
@@ -297,10 +298,11 @@ psp_snp_init(struct psp_softc *sc)
 {
 	struct psp_snp_init_ex	*init;
 	struct psp_range_list	*rangelist;
+	bios_memmap_t		*bmp;
 	uint64_t		 rmpbase, rmpend;
 	size_t			 rmpsize;
 	vaddr_t			 rmpva;
-	int			 error;
+	int			 i, nelem, error;
 
 	init = (struct psp_snp_init_ex *)sc->sc_cmd_kva;
 	bzero(init, sizeof(*init));
@@ -318,15 +320,37 @@ psp_snp_init(struct psp_softc *sc)
 
 	rangelist = (struct psp_range_list *)(sc->sc_cmd_kva + sizeof(*init));
 	bzero(rangelist, sizeof(*rangelist));
-	rangelist->n = 1;
-	rangelist->ranges.base = rmpbase;
-	rangelist->ranges.page_count = atop(rmpsize);
+	rangelist->n = 0;
+	nelem = (sc->sc_cmd_size - sizeof(*init) - sizeof(*rangelist)) /
+	    sizeof(struct psp_range);
+
+	/* add RMP to page list */
+	/* XXX hshoexer: enforce page alignment etc. */
+	rangelist->ranges[0].base = rmpbase;
+	rangelist->ranges[0].page_count = atop(rmpsize);
+	rangelist->n++;
+	nelem--;
+
+	/* add non-free ranges from bios memory map */
+	for (bmp = bios_memmap, i = 0; bmp->type != BIOS_MAP_END; bmp++) {
+		if (bmp->type == BIOS_MAP_FREE)
+			continue;
+		if (nelem == 0)
+			return E2BIG;
+		/* XXX hshoexer: enforce page alignment etc. */
+		rangelist->ranges[i].base = bmp->addr;
+		rangelist->ranges[i].page_count = atop(bmp->size);
+		rangelist->n++;
+		i++;
+		nelem--;
+	}
+
 	init->features |= PSP_SIEX_LIST_PADDR_EN;
 	init->list_paddr = sc->sc_cmd_map->dm_segs[0].ds_addr + sizeof(*init);
-	printf("%s: init %p/0x%lx rangelist %p/0x%lx base 0x%llx cnt %u\n",
+	printf("%s: init %p/0x%lx rangelist %p/0x%lx n %u nelem %d\n",
 	    __func__, init,  sc->sc_cmd_map->dm_segs[0].ds_addr,
 	    rangelist,  sc->sc_cmd_map->dm_segs[0].ds_addr + sizeof(*init),
-	    rangelist->ranges.base, rangelist->ranges.page_count);
+	    rangelist->n, nelem);
 
 	wbinvd_on_all_cpus_acked();
 	mfdm_enable_on_allcpus_acked();
@@ -338,6 +362,8 @@ psp_snp_init(struct psp_softc *sc)
 		return (error);
 
 	wbinvd_on_all_cpus_acked();
+
+	/* XXX DF_FLUSH */
 
 	sc->sc_flags |= PSPF_INITIALIZED;
 
