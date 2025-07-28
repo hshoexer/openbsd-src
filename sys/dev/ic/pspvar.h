@@ -300,7 +300,7 @@ struct psp_range {
 struct psp_range_list {
 	uint32_t		n;
 	uint32_t		reserved;
-	struct psp_range	ranges;		/* just one for now */
+	struct psp_range	ranges[];
 } __packed;
 
 #define SNP_F_IOMMU_SNP_SHUTDOWN	(1 << 0)
