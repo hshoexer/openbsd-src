@@ -918,10 +918,10 @@ pspopen(dev_t dev, int flag, int mode, struct proc *p)
 	if (sc == NULL)
 		return (ENXIO);
 
-#if 0
 	/* Ignore error, proceed without new firmware. */
 	(void) psp_load_ucode(sc);
 
+#if 0
 	if (!(sc->sc_flags & PSPF_INITIALIZED))
 		return (psp_reinit(sc, 0));
 #endif
