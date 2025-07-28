@@ -772,16 +772,32 @@ start_vmm_on_cpu(struct cpu_info *ci)
 		msr = rdmsr(MSR_EFER);
 		msr |= EFER_SVME;
 		wrmsr(MSR_EFER, msr);
-#if 0
+#if 1
 		if (ci->ci_feature_amdsev_eax & CPUIDEAX_SEVSNP) {
-			uint64_t syscfg, rmpbase, rmpend;
+			uint64_t syscfg, rmpbase, rmpend, iorr_base0,
+			    iorr_mask0, iorr_base1, iorr_mask1, top_mem,
+			    top_mem2;
 
 			syscfg = rdmsr(MSR_SYS_CFG);
 			rmpbase = rdmsr(MSR_RMP_BASE);
 			rmpend = rdmsr(MSR_RMP_END);
+
+			iorr_base0 = rdmsr(MSR_IORR_BASE0);
+			iorr_mask0 = rdmsr(MSR_IORR_MASK0);
+			iorr_base1 = rdmsr(MSR_IORR_BASE1);
+			iorr_mask1 = rdmsr(MSR_IORR_MASK1);
+
+			top_mem = rdmsr(MSR_TOP_MEM);
+			top_mem2 = rdmsr(MSR_TOP_MEM2);
+
 			printf("%s: %llb 0x%llx 0x%llx\n",
 			    ci->ci_dev->dv_xname, syscfg, MSR_SYS_CFG_BITS,
 			    rmpbase, rmpend);
+			printf("%s: iorr 0x%llx 0x%llx 0x%llx 0x%llx\n",
+			    __func__, iorr_base0, iorr_mask0, iorr_base1,
+			    iorr_mask1);
+			printf("%s: tom 0x%llx 0x%llx\n", __func__, top_mem,
+			    top_mem2);
 		}
 #endif
 	}
