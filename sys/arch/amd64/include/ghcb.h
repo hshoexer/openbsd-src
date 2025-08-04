@@ -136,6 +136,7 @@ void	ghcb_sync_in(struct trapframe *, struct ghcb_extra_regs *,
 	    struct ghcb_sa *, struct ghcb_sync *);
 void	_ghcb_mem_rw(vaddr_t, int, void *, bool);
 void	_ghcb_io_rw(uint16_t, int, uint32_t *, bool);
+void	ghcb_msr_rw(int, uint64_t *, int);
 
 void	ghcb_outb(uint16_t, uint8_t);
 
@@ -246,6 +247,22 @@ static inline void
 ghcb_io_write_4(uint16_t port, uint32_t v)
 {
 	_ghcb_io_rw(port, GHCB_SZ32, &v, false);
+}
+
+static inline void
+ghcb_wrmsr(int msr, uint64_t val)
+{
+	ghcb_msr_rw(msr, &val, 0);
+}
+
+static inline uint64_t
+ghcb_rdmsr(int msr)
+{
+	uint64_t val;
+
+	ghcb_msr_rw(msr, &val, 1);
+
+	return val;
 }
 
 #endif /* !_LOCORE */
