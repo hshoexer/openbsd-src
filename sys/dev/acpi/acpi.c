@@ -74,6 +74,8 @@ int	acpi_print(void *, const char *);
 void	acpi_map_pmregs(struct acpi_softc *);
 void	acpi_unmap_pmregs(struct acpi_softc *);
 
+int	acpi_grant(struct acpi_table_header *);
+
 int	acpi_loadtables(struct acpi_softc *, struct acpi_rsdp *);
 
 int	_acpi_matchhids(const char *, const char *[]);
@@ -1131,18 +1133,19 @@ acpi_attach_common(struct acpi_softc *sc, paddr_t base)
 
 	if (entry == NULL)
 		printf(" !DSDT");
+	else {
+		p_dsdt = entry->q_table;
+		acpi_parse_aml(sc, NULL, p_dsdt->aml,
+		    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
 
-	p_dsdt = entry->q_table;
-	acpi_parse_aml(sc, NULL, p_dsdt->aml,
-	    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
-
-	/* Load SSDT's */
-	SIMPLEQ_FOREACH(entry, &sc->sc_tables, q_next) {
-		if (memcmp(entry->q_table, SSDT_SIG,
-		    sizeof(SSDT_SIG) - 1) == 0) {
-			p_dsdt = entry->q_table;
-			acpi_parse_aml(sc, NULL, p_dsdt->aml,
-			    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
+		/* Load SSDT's */
+		SIMPLEQ_FOREACH(entry, &sc->sc_tables, q_next) {
+			if (memcmp(entry->q_table, SSDT_SIG,
+			    sizeof(SSDT_SIG) - 1) == 0) {
+				p_dsdt = entry->q_table;
+				acpi_parse_aml(sc, NULL, p_dsdt->aml,
+				    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
+			}
 		}
 	}
 
@@ -1359,6 +1362,23 @@ acpi_print(void *aux, const char *pnp)
 	return (UNCONF);
 }
 
+int
+acpi_grant(struct acpi_table_header *hdr)
+{
+	const char *sigs[] = { XSDT_SIG, MADT_SIG, FADT_SIG, MCFG_SIG, NULL };
+	int i;
+
+	if (!ISSET(cpu_sev_guestmode, SEV_STAT_ES_ENABLED))
+		return 1;
+
+	for (i = 0; sigs[i]; i++) {
+		if (memcmp(sigs[i], hdr->signature, 4) == 0)
+			return 1;
+	}
+
+	return 0;
+}
+
 struct acpi_q *
 acpi_maptable(struct acpi_softc *sc, paddr_t addr, const char *sig,
     const char *oem, const char *tbl, int flag)
@@ -1389,6 +1409,11 @@ acpi_maptable(struct acpi_softc *sc, paddr_t addr, const char *sig,
 	if ((sig && memcmp(sig, hdr->signature, 4)) ||
 	    (oem && memcmp(oem, hdr->oemid, 6)) ||
 	    (tbl && memcmp(tbl, hdr->oemtableid, 8))) {
+		acpi_unmap(&handle);
+		return NULL;
+	}
+
+	if (!acpi_grant(hdr)) {
 		acpi_unmap(&handle);
 		return NULL;
 	}

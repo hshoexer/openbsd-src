@@ -3545,6 +3545,11 @@ aml_eval(struct aml_scope *scope, struct aml_value *my_ret, int ret_type,
 		    aml_getname(my_ret->v_nameref));
 		break;
 	case AML_OBJTYPE_METHOD:
+		if (ISSET(cpu_sev_guestmode, SEV_STAT_ES_ENABLED)) {
+			aml_error++;
+			break;
+		}
+
 		dnprintf(10,"\n--== Eval Method [%s, %d args] to %c ==--\n",
 		    aml_nodename(tmp->node),
 		    AML_METHOD_ARGCOUNT(tmp->v_method.flags),
