@@ -302,10 +302,19 @@ _aml_die(const char *fn, int line, const char *fmt, ...)
 	panic("aml_die %s:%d", fn, line);
 }
 
+int
+aml_namespace_invalid(void)
+{
+	return (acpi_softc->sc_root == NULL);
+}
+
 void
 aml_hashopcodes(void)
 {
 	int i;
+
+	if (aml_namespace_invalid())
+		return;
 
 	/* Dynamically allocate hash table */
 	aml_ophash = (struct aml_opcode **)acpi_os_malloc(HASH_SIZE *
@@ -1264,6 +1273,9 @@ aml_find_node(struct aml_node *node, const char *name,
 	struct aml_node *child;
 	const char *nn;
 
+	if (aml_namespace_invalid())
+		return;
+
 	/* match child of this node first before recursing */
 	SIMPLEQ_FOREACH(child, &node->son, sib) {
 		nn = child->name;
@@ -1534,6 +1546,9 @@ aml_create_defaultobjects(void)
 	struct aml_value *tmp;
 	struct aml_defval *def;
 
+	if (aml_namespace_invalid())
+		return;
+
 #ifdef ACPI_MEMDEBUG
 	LIST_INIT(&acpi_memhead);
 #endif
@@ -1705,6 +1720,9 @@ aml_fixup_node(struct aml_node *node, void *arg)
 void
 aml_postparse(void)
 {
+	if (aml_namespace_invalid())
+		return;
+
 	aml_walknodes(&aml_root, AML_WALK_PRE, aml_fixup_node, NULL);
 }
 
@@ -4637,6 +4655,9 @@ acpi_parse_aml(struct acpi_softc *sc, const char *rootpath,
 	struct aml_scope *scope;
 	struct aml_value res;
 
+	if (aml_namespace_invalid())
+		return (-1);
+
 	if (rootpath) {
 		root = aml_searchname(&aml_root, rootpath);
 		if (root == NULL)
@@ -4720,6 +4741,9 @@ int
 aml_evalname(struct acpi_softc *sc, struct aml_node *parent, const char *name,
     int argc, struct aml_value *argv, struct aml_value *res)
 {
+	if (aml_namespace_invalid())
+		return (-1);
+
 	parent = aml_searchname(parent, name);
 	return aml_evalnode(sc, parent, argc, argv, res);
 }
@@ -4733,6 +4757,9 @@ aml_evalinteger(struct acpi_softc *sc, struct aml_node *parent,
 {
 	struct aml_value res;
 	int rc;
+
+	if (aml_namespace_invalid())
+		return (-1);
 
 	parent = aml_searchname(parent, name);
 	rc = aml_evalnode(sc, parent, argc, argv, &res);
@@ -4774,6 +4801,9 @@ __aml_searchname(struct aml_node *root, const void *vname, int create)
 struct aml_node *
 aml_searchname(struct aml_node *root, const void *vname)
 {
+	if (aml_namespace_invalid())
+		return NULL;
+
 	return __aml_searchname(root, vname, 0);
 }
 

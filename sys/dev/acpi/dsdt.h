@@ -76,6 +76,8 @@ void			aml_create_defaultobjects(void);
 
 const char		*aml_nodename(struct aml_node *);
 
+int			aml_namespace_invalid(void);
+
 #define SRT_IRQ2		0x22
 #define SRT_IRQ3		0x23
 #define SRT_DMA			0x2A

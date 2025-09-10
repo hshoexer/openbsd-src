@@ -73,6 +73,8 @@ int	acpi_print(void *, const char *);
 void	acpi_map_pmregs(struct acpi_softc *);
 void	acpi_unmap_pmregs(struct acpi_softc *);
 
+int	acpi_grant(struct acpi_table_header *);
+
 int	acpi_loadtables(struct acpi_softc *, struct acpi_rsdp *);
 
 int	_acpi_matchhids(const char *, const char *[]);
@@ -1084,7 +1086,13 @@ acpi_attach_common(struct acpi_softc *sc, paddr_t base)
 	rw_init(&sc->sc_lck, "acpilk");
 
 	acpi_softc = sc;
-	sc->sc_root = &aml_root;
+
+	/*
+	 * Do not set up the AML namespace on confidential VMs;
+	 * this renders AML evaulation inoperable.
+	 */
+	if (!ISSET(boothowto, RB_COCOVM))
+		sc->sc_root = &aml_root;
 
 	if (acpi_map(base, sizeof(struct acpi_rsdp), &handle)) {
 		printf(": can't map memory\n");
@@ -1184,18 +1192,19 @@ acpi_attach_common(struct acpi_softc *sc, paddr_t base)
 
 	if (entry == NULL)
 		printf(" !DSDT");
+	else {
+		p_dsdt = entry->q_table;
+		acpi_parse_aml(sc, NULL, p_dsdt->aml,
+		    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
 
-	p_dsdt = entry->q_table;
-	acpi_parse_aml(sc, NULL, p_dsdt->aml,
-	    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
-
-	/* Load SSDT's */
-	SIMPLEQ_FOREACH(entry, &sc->sc_tables, q_next) {
-		if (memcmp(entry->q_table, SSDT_SIG,
-		    sizeof(SSDT_SIG) - 1) == 0) {
-			p_dsdt = entry->q_table;
-			acpi_parse_aml(sc, NULL, p_dsdt->aml,
-			    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
+		/* Load SSDT's */
+		SIMPLEQ_FOREACH(entry, &sc->sc_tables, q_next) {
+			if (memcmp(entry->q_table, SSDT_SIG,
+			    sizeof(SSDT_SIG) - 1) == 0) {
+				p_dsdt = entry->q_table;
+				acpi_parse_aml(sc, NULL, p_dsdt->aml,
+				    p_dsdt->hdr_length - sizeof(p_dsdt->hdr));
+			}
 		}
 	}
 
@@ -1373,6 +1382,9 @@ acpi_attach_common(struct acpi_softc *sc, paddr_t base)
 	/* Enable PCI Power Management. */
 	pci_dopm = 1;
 
+	if (aml_namespace_invalid())
+		return;
+
 	acpi_attach_machdep(sc);
 
 	kthread_create_deferred(acpi_create_thread, sc);
@@ -1412,6 +1424,24 @@ acpi_print(void *aux, const char *pnp)
 	return (UNCONF);
 }
 
+int
+acpi_grant(struct acpi_table_header *hdr)
+{
+#if 0
+	const char *sigs[] = { DSDT_SIG, SSDT_SIG, NULL };
+	int i;
+
+	if (!aml_namespace_invalid())
+		return 1;
+
+	for (i = 0; sigs[i]; i++) {
+		if (memcmp(sigs[i], hdr->signature, 4) == 0)
+			return 0;
+	}
+#endif
+	return 1;
+}
+
 struct acpi_q *
 acpi_maptable(struct acpi_softc *sc, paddr_t addr, const char *sig,
     const char *oem, const char *tbl, int flag)
@@ -1442,6 +1472,11 @@ acpi_maptable(struct acpi_softc *sc, paddr_t addr, const char *sig,
 	if ((sig && memcmp(sig, hdr->signature, 4)) ||
 	    (oem && memcmp(oem, hdr->oemid, 6)) ||
 	    (tbl && memcmp(tbl, hdr->oemtableid, 8))) {
+		acpi_unmap(&handle);
+		return NULL;
+	}
+
+	if (!acpi_grant(hdr)) {
 		acpi_unmap(&handle);
 		return NULL;
 	}
@@ -2690,7 +2725,7 @@ acpi_powerdown(void)
 	int state = ACPI_STATE_S5, s;
 	struct acpi_softc *sc = acpi_softc;
 
-	if (acpi_enabled == 0)
+	if (acpi_enabled == 0 || aml_namespace_invalid())
 		return;
 
 	s = splhigh();
