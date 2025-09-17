@@ -4,6 +4,7 @@
 SUBDIR +=	ddb
 SUBDIR +=	dump_tables
 SUBDIR +=	fpu
+SUBDIR +=	seves_mmio
 SUBDIR +=	vmm
 
 .elif make(regress) || make(all)
