@@ -5127,7 +5127,8 @@ enum vmm_action
 svm_handle_np_fault(struct vcpu *vcpu)
 {
 	uint64_t gpa;
-	int gpa_memtype;
+	int gpa_memtype, ret;
+	paddr_t hpa;
 	enum vmm_action action;
 	struct vmcb *vmcb = (struct vmcb *)vcpu->vc_control_va;
 	struct vm_exit_eptviolation *vee = &vcpu->vc_exit.vee;
@@ -5146,16 +5147,34 @@ svm_handle_np_fault(struct vcpu *vcpu)
 		action = svm_fault_page(vcpu, gpa);
 		break;
 	case VMM_MEM_TYPE_MMIO:
-		vee->vee_fault_type = VEE_FAULT_MMIO_ASSIST;
-		if (ci->ci_vmm_cap.vcc_svm.svm_decode_assist) {
-			vee->vee_insn_len = vmcb->v_n_bytes_fetched;
-			memcpy(&vee->vee_insn_bytes, vmcb->v_guest_ins_bytes,
-			    sizeof(vee->vee_insn_bytes));
-			vee->vee_insn_info |= VEE_BYTES_VALID;
+		if (vcpu->vc_seves) {
+			vee->vee_fault_type = VEE_FAULT_HANDLED;
+			/* Setup invalid mapping to raise #VC in guest */
+			hpa = (1ULL << amd64_phys_red) - 1;
+			hpa <<= (amd64_phys_addrsz - amd64_phys_red);
+			ret = pmap_enter(vcpu->vc_parent->vm_pmap,
+			    trunc_page(gpa), hpa,
+			    PROT_READ | PROT_WRITE | PROT_EXEC, 0);
+			if (ret) {
+				printf("%s: pmap_enter failed pa=0x%llx, "
+				    "hpa=0x%llx\n", __func__, (uint64_t)hpa,
+				    (uint64_t)hpa);
+				return (VMM_ACTION_TERMINATE);
+			}
+			action = VMM_ACTION_RETRY;
+		} else {
+			vee->vee_fault_type = VEE_FAULT_MMIO_ASSIST;
+			if (ci->ci_vmm_cap.vcc_svm.svm_decode_assist) {
+				vee->vee_insn_len = vmcb->v_n_bytes_fetched;
+				memcpy(&vee->vee_insn_bytes,
+				    vmcb->v_guest_ins_bytes,
+				    sizeof(vee->vee_insn_bytes));
+				vee->vee_insn_info |= VEE_BYTES_VALID;
+			}
+			vee->vee_gpa = gpa;
+			vee->vee_insn_info |= VEE_GPA_VALID;
+			action = VMM_ACTION_ASSIST;
 		}
-		vee->vee_gpa = gpa;
-		vee->vee_insn_info |= VEE_GPA_VALID;
-		action = VMM_ACTION_ASSIST;
 		break;
 	default:
 		printf("%s: unknown memory type %d for GPA 0x%llx\n",
