@@ -169,6 +169,7 @@ struct cpu_info {
 	u_int32_t	ci_feature_sefflags_ebx;/* [I] */
 	u_int32_t	ci_feature_sefflags_ecx;/* [I] */
 	u_int32_t	ci_feature_sefflags_edx;/* [I] */
+	u_int32_t	ci_feature_amdspec_eax;	/* [I] */
 	u_int32_t	ci_feature_amdspec_ebx;	/* [I] */
 	u_int32_t	ci_feature_amdsev_eax;	/* [I] */
 	u_int32_t	ci_feature_amdsev_ebx;	/* [I] */
@@ -416,6 +417,8 @@ void	identifycpu(struct cpu_info *);
 int	cpu_amd64speed(int *);
 extern int cpuspeed;
 extern int amd64_pos_cbit;
+extern int amd64_phys_addrsz;
+extern int amd64_phys_red;
 extern int amd64_min_noes_asid;
 
 /* machdep.c */
