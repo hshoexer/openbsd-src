@@ -67,6 +67,8 @@ int cpuspeed;
 
 int amd64_has_xcrypt;
 int amd64_pos_cbit;	/* C bit position for SEV */
+int amd64_phys_addrsz;	/* Physcial address size */
+int amd64_phys_red;	/* Physcial address size reduction */
 int amd64_min_noes_asid;
 int has_rdrand;
 int has_rdseed;
@@ -676,8 +678,9 @@ identifycpu(struct cpu_info *ci)
 	/* speculation control features */
 	if (ci->ci_vendor == CPUV_AMD) {
 		if (ci->ci_pnfeatset >= 0x80000008) {
-			CPUID(0x80000008, dummy, ci->ci_feature_amdspec_ebx,
-			    dummy, dummy);
+			CPUID(0x80000008, ci->ci_feature_amdspec_eax,
+			    ci->ci_feature_amdspec_ebx, dummy, dummy);
+			amd64_phys_addrsz = ci->ci_feature_amdspec_eax & 0xff;
 			pcpuid(ci, "80000008", 'b',
 			    CPUID_MEMBER(ci_feature_amdspec_ebx),
 			    CPUID_AMDSPEC_EBX_BITS);
@@ -711,6 +714,7 @@ identifycpu(struct cpu_info *ci)
 		    'd', CPUID_MEMBER(ci_feature_amdsev_edx),
 		    CPUID_AMDSEV_EDX_BITS);
 		amd64_pos_cbit = (ci->ci_feature_amdsev_ebx & 0x3f);
+		amd64_phys_red = ((ci->ci_feature_amdsev_ebx >> 6) & 0x3f);
 		amd64_min_noes_asid = ci->ci_feature_amdsev_edx;
 		if (cpu_sev_guestmode && CPU_IS_PRIMARY(ci))
 			printf("\n%s: SEV%s guest mode", ci->ci_dev->dv_xname,

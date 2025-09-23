@@ -5046,6 +5046,7 @@ int
 svm_handle_np_fault(struct vcpu *vcpu)
 {
 	uint64_t gpa;
+	paddr_t hpa;
 	int gpa_memtype, ret = 0;
 	struct vmcb *vmcb = (struct vmcb *)vcpu->vc_control_va;
 	struct vm_exit_eptviolation *vee = &vcpu->vc_exit.vee;
@@ -5062,14 +5063,25 @@ svm_handle_np_fault(struct vcpu *vcpu)
 		ret = svm_fault_page(vcpu, gpa);
 		break;
 	case VMM_MEM_TYPE_MMIO:
-		vee->vee_fault_type = VEE_FAULT_MMIO_ASSIST;
-		if (ci->ci_vmm_cap.vcc_svm.svm_decode_assist) {
-			vee->vee_insn_len = vmcb->v_n_bytes_fetched;
-			memcpy(&vee->vee_insn_bytes, vmcb->v_guest_ins_bytes,
-			    sizeof(vee->vee_insn_bytes));
-			vee->vee_insn_info |= VEE_BYTES_VALID;
+		if (vcpu->vc_seves) {
+			vee->vee_fault_type = VEE_FAULT_HANDLED;
+			/* Setup invalid mapping to raise #VC in guest */
+			hpa = (1ULL << amd64_phys_red) - 1;
+			hpa <<= (amd64_phys_addrsz - amd64_phys_red);
+			ret = pmap_enter(vcpu->vc_parent->vm_pmap,
+			    trunc_page(gpa), hpa,
+			    PROT_READ | PROT_WRITE | PROT_EXEC, 0);
+		} else {
+			vee->vee_fault_type = VEE_FAULT_MMIO_ASSIST;
+			if (ci->ci_vmm_cap.vcc_svm.svm_decode_assist) {
+				vee->vee_insn_len = vmcb->v_n_bytes_fetched;
+				memcpy(&vee->vee_insn_bytes,
+				    vmcb->v_guest_ins_bytes,
+				    sizeof(vee->vee_insn_bytes));
+				vee->vee_insn_info |= VEE_BYTES_VALID;
+			}
+			ret = EAGAIN;
 		}
-		ret = EAGAIN;
 		break;
 	default:
 		printf("%s: unknown memory type %d for GPA 0x%llx\n",
