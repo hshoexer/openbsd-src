@@ -1726,6 +1726,10 @@ vcpu_svm_init_vmsa(struct vcpu *vcpu, struct vcpu_reg_state *vrs)
 	vmsa->v_x87_fcw = __INITIAL_NPXCW__;
 	vmsa->v_mxcsr = __INITIAL_MXCSR__;
 
+	/* if available, enable VmgexitParameter */
+	if (curcpu()->ci_feature_amdsev_eax & CPUIDEAX_VMGEXITPARAM)
+		vmsa->v_sev_features |= SVM_SEV_FEATURES_VMGEXITPARAMETER;
+
 	return 0;
 }
 
@@ -4656,6 +4660,8 @@ svm_handle_vmgexit(struct vcpu *vcpu)
 		syncout = 1;
 		break;
 	case SVM_VMEXIT_VMGEXIT:
+		DPRINTF("%s: vmgexit_cpl 0x%hhx vmgexit_rax 0x%llx\n",
+		    __func__, vmcb->v_vmgexit_cpl, vmcb->v_vmgexit_rax);
 		vmm_inject_ud(vcpu);
 		action = VMM_ACTION_INJECT;
 		break;
@@ -4718,7 +4724,7 @@ svm_get_iflag(struct vcpu *vcpu, uint64_t rflags)
 	struct vmcb		*vmcb = (struct vmcb *)vcpu->vc_control_va;
 
 	if (vcpu->vc_seves)
-		return (vmcb->v_intr_shadow & SMV_GUEST_INTR_MASK);
+		return (vmcb->v_intr_shadow & SVM_GUEST_INTR_MASK);
 	return (rflags & PSL_I);
 }
 

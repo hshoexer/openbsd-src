@@ -659,9 +659,11 @@ struct vmcb_segment {
 #define SVM_ENABLE_SEV		(1ULL << 1)
 #define SVM_SEVES_ENABLE	(1ULL << 2)
 
-#define SMV_GUEST_INTR_MASK	(1ULL << 1)
+#define SVM_GUEST_INTR_MASK	(1ULL << 1)
 
 #define SVM_LBRVIRT_ENABLE	(1ULL << 0)
+
+#define SVM_SEV_FEATURES_VMGEXITPARAMETER	(1ULL << 10)
 
 struct vmcb {
 	union {
@@ -707,6 +709,8 @@ struct vmcb {
 			uint64_t	v_avic_phys;		/* 0F8h */
 			uint64_t	v_pad12;		/* 100h */
 			uint64_t	v_vmsa_pa;		/* 108h */
+			uint64_t	v_vmgexit_rax;		/* 110h */
+			uint8_t		v_vmgexit_cpl;		/* 118h */
 
 		};
 		uint8_t			vmcb_control[0x400];
