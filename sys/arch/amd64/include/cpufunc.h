@@ -435,8 +435,12 @@ breakpoint(void)
 static __inline void
 vmgexit(void)
 {
-	/* rep; vmmcall encodes the vmgexit instruction */
-	__asm volatile("rep; vmmcall" : : : "memory");
+	/*
+	 * "rep; vmmcall" encodes the vmgexit instruction.
+	 * Unconditionally clear %rax in case the vmgexit parameter
+	 * feature is enabled by the hyper visor.
+	 */
+	__asm volatile("xorl %%eax,%%eax; rep; vmmcall" : : : "memory");
 }
 
 void amd64_errata(struct cpu_info *);

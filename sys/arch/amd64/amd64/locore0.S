@@ -878,6 +878,7 @@ vc_cpuid32:
 	movl	$MSR_PROTO_TERMINATION_REQ, %eax
 	movl	$MSR_SEV_GHCB, %ecx
 	wrmsr
+	xorl	%eax,%eax
 	rep vmmcall
 .Lterm_loop32:
 	hlt
