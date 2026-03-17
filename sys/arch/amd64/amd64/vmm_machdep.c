@@ -88,6 +88,7 @@ int vcpu_init_vmx(struct vcpu *);
 int vcpu_init_svm(struct vcpu *, struct vm_create_params *);
 int vcpu_run_vmx(struct vcpu *, struct vm_run_params *);
 int vcpu_run_svm(struct vcpu *, struct vm_run_params *);
+int vcpu_get_insnlen(struct vcpu *, uint64_t *);
 void vcpu_deinit(struct vcpu *);
 void vcpu_deinit_svm(struct vcpu *);
 void vcpu_deinit_vmx(struct vcpu *);
@@ -4213,7 +4214,7 @@ vmx_get_exit_info(uint64_t *rip, uint64_t *exit_reason)
 int
 svm_handle_exit(struct vcpu *vcpu)
 {
-	uint64_t exit_reason, rflags;
+	uint64_t exit_reason, rflags, insn_length;
 	int update_rip, ret = 0, guest_cpl;
 	struct vmcb *vmcb = (struct vmcb *)vcpu->vc_control_va;
 
@@ -4301,8 +4302,16 @@ svm_handle_exit(struct vcpu *vcpu)
 		    vcpu->vc_gueststate.vg_rax == HVCALL_FORCED_ABORT)
 			return (EINVAL);
 		DPRINTF("SVM_VMEXIT_VMMCALL at cpl=%d\n", guest_cpl);
-		ret = vmm_inject_ud(vcpu);
-		update_rip = 0;
+		if (guest_cpl > 0) {
+			ret = vmm_inject_ud(vcpu);
+			update_rip = 0;
+			break;
+		}
+		if (vcpu_get_insnlen(vcpu, &insn_length))
+			return (EINVAL);
+		vcpu->vc_gueststate.vg_rax = -1;
+		vcpu->vc_gueststate.vg_rip += insn_length;
+		update_rip = 1;
 		break;
 	default:
 		DPRINTF("%s: unhandled exit 0x%llx (pa=0x%llx)\n", __func__,
@@ -4653,7 +4662,7 @@ svm_get_iflag(struct vcpu *vcpu, uint64_t rflags)
 int
 vmx_handle_exit(struct vcpu *vcpu)
 {
-	uint64_t exit_reason, rflags, istate;
+	uint64_t exit_reason, rflags, istate, insn_length;
 	int update_rip, ret = 0, guest_cpl;
 
 	update_rip = 0;
@@ -4741,8 +4750,16 @@ vmx_handle_exit(struct vcpu *vcpu)
 		    vcpu->vc_gueststate.vg_rax == HVCALL_FORCED_ABORT)
 			return (EINVAL);
 		DPRINTF("VMX_EXIT_VMCALL at cpl=%d\n", guest_cpl);
-		ret = vmm_inject_ud(vcpu);
-		update_rip = 0;
+		if (guest_cpl > 0) {
+			ret = vmm_inject_gp(vcpu);
+			update_rip = 0;
+			break;
+		}
+		if (vcpu_get_insnlen(vcpu, &insn_length))
+			return (EINVAL);
+		vcpu->vc_gueststate.vg_rax = -1;
+		vcpu->vc_gueststate.vg_rip += insn_length;
+		update_rip = 1;
 		break;
 	default:
 #ifdef VMM_DEBUG
@@ -6894,6 +6911,41 @@ vcpu_run_svm(struct vcpu *vcpu, struct vm_run_params *vrp)
 		ret = EINVAL;
 
 	return (ret);
+}
+
+/*
+ * vcpu_get_insnlen
+ */
+int
+vcpu_get_insnlen(struct vcpu *vcpu, uint64_t *insnlen)
+{
+	struct vmcb *vmcb;
+	struct cpu_info *ci = curcpu();
+
+	KASSERT(insnlen);
+
+	if (vmm_softc->mode == VMM_MODE_EPT) {
+		if (vmread(VMCS_INSTRUCTION_LENGTH, insnlen))
+			return (EINVAL);
+	} else {
+		if (!ci->ci_vmm_cap.vcc_svm.svm_nrip_save)
+			return (EINVAL);
+		vmcb = (struct vmcb *)vcpu->vc_control_va;
+		/*
+		 * According to section 15.7.1 of APMv2 the nRIP
+		 * is saved for instruction intercepts, MSR and IOIO
+		 * intercepts and exceptions caused by INT3, INTO and
+		 * BOUND.  Otherwise nRIP is set to 0.
+		 */
+		if (vmcb->v_nrip > 0) {
+			if (vmcb->v_nrip <= vcpu->vc_gueststate.vg_rip)
+				return (EINVAL);
+			*insnlen = vmcb->v_nrip - vcpu->vc_gueststate.vg_rip;
+		} else
+			*insnlen = 0;
+	}
+
+	return (0);
 }
 
 /*
