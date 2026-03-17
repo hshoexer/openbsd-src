@@ -88,6 +88,7 @@ int vcpu_init_vmx(struct vcpu *);
 int vcpu_init_svm(struct vcpu *, struct vm_create_params *);
 int vcpu_run_vmx(struct vcpu *, struct vm_run_params *);
 int vcpu_run_svm(struct vcpu *, struct vm_run_params *);
+int vcpu_update_rip(struct vcpu *, uint64_t);
 void vcpu_deinit(struct vcpu *);
 void vcpu_deinit_svm(struct vcpu *);
 void vcpu_deinit_vmx(struct vcpu *);
@@ -4301,8 +4302,14 @@ svm_handle_exit(struct vcpu *vcpu)
 		    vcpu->vc_gueststate.vg_rax == HVCALL_FORCED_ABORT)
 			return (EINVAL);
 		DPRINTF("SVM_VMEXIT_VMMCALL at cpl=%d\n", guest_cpl);
-		ret = vmm_inject_ud(vcpu);
-		update_rip = 0;
+		if (guest_cpl > 0) {
+			ret = vmm_inject_ud(vcpu);
+			update_rip = 0;
+			break;
+		}
+		vcpu->vc_gueststate.vg_rax = -1;
+		vcpu_update_rip(vcpu, 3);
+		update_rip = 1;
 		break;
 	default:
 		DPRINTF("%s: unhandled exit 0x%llx (pa=0x%llx)\n", __func__,
@@ -4741,8 +4748,14 @@ vmx_handle_exit(struct vcpu *vcpu)
 		    vcpu->vc_gueststate.vg_rax == HVCALL_FORCED_ABORT)
 			return (EINVAL);
 		DPRINTF("VMX_EXIT_VMCALL at cpl=%d\n", guest_cpl);
-		ret = vmm_inject_ud(vcpu);
-		update_rip = 0;
+		if (guest_cpl > 0) {
+			ret = vmm_inject_gp(vcpu);
+			update_rip = 0;
+			break;
+		}
+		vcpu->vc_gueststate.vg_rax = -1;
+		vcpu_update_rip(vcpu, 3);
+		update_rip = 1;
 		break;
 	default:
 #ifdef VMM_DEBUG
@@ -6894,6 +6907,40 @@ vcpu_run_svm(struct vcpu *vcpu, struct vm_run_params *vrp)
 		ret = EINVAL;
 
 	return (ret);
+}
+
+/*
+ * vcpu_update_rip
+ *
+ * Updates RIP by size of the current instruction:
+ *
+ * - VMX: Add VMCS_INSTRUCTION_LENGTH.
+ * - SVM: If supported use the saved next RIP; otherwise use proivded
+ *   alternative instruction size.
+ */
+int
+vcpu_update_rip(struct vcpu *vcpu, uint64_t altsz)
+{
+	uint64_t insn_length;
+	struct vmcb *vmcb;
+	struct cpu_info *ci = curcpu();
+
+	if (vmm_softc->mode == VMM_MODE_EPT) {
+		if (vmread(VMCS_INSTRUCTION_LENGTH, &insn_length)) {
+			DPRINTF("%s: can't obtain instruction length\n",
+			    __func__);
+			return (EINVAL);
+		}
+		vcpu->vc_gueststate.vg_rip += insn_length;
+	} else {
+		if (ci->ci_vmm_cap.vcc_svm.svm_nrip_save) {
+			vmcb = (struct vmcb *)vcpu->vc_control_va;
+			vcpu->vc_gueststate.vg_rip = vmcb->v_nrip;
+		} else
+			vcpu->vc_gueststate.vg_rip += altsz;
+	}
+
+	return (0);
 }
 
 /*
