@@ -104,6 +104,7 @@ void		pci_set_powerstate_md(pci_chipset_tag_t, pcitag_t, int, int);
 
 void		pci_mcfg_init(bus_space_tag_t, bus_addr_t, int, int, int);
 pci_chipset_tag_t pci_lookup_segment(int, int);
+int		acpipci_domain_to_seg(int);
 
 #define __HAVE_PCI_MSIX
 

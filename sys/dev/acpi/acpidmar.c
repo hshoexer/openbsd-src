@@ -21,6 +21,7 @@
 #include <sys/device.h>
 #include <sys/malloc.h>
 #include <sys/queue.h>
+#include <sys/extent.h>
 #include <sys/types.h>
 #include <sys/mbuf.h>
 #include <sys/proc.h>
@@ -144,6 +145,18 @@ struct domain {
 	struct extent		*iovamap;
 	TAILQ_HEAD(,domain_dev)	devices;
 	TAILQ_ENTRY(domain)	link;
+};
+
+struct ppbwin_entry {
+	TAILQ_ENTRY(ppbwin_entry) link;
+	int			segment;
+	uint16_t		sid;			/* bridge BDF (sid) */
+	uint8_t			sec;			/* secondary bus */
+	uint8_t			sub;			/* subordinate bus */
+	bus_addr_t		mem_base;
+	bus_size_t		mem_size;
+	bus_addr_t		pmem_base;
+	bus_size_t		pmem_size;
 };
 
 #define DOM_DEBUG 0x1
@@ -284,6 +297,7 @@ struct acpidmar_softc {
 	TAILQ_HEAD(,atsr_softc)	sc_atsrs;
 
 	TAILQ_HEAD(,ivmd_entry) sc_ivmds;
+	TAILQ_HEAD(,ppbwin_entry) sc_ppbwins;
 };
 
 int		acpidmar_activate(struct device *, int);
@@ -2156,6 +2170,7 @@ domain_add_device(struct domain *dom, int sid)
 {
 	struct domain_dev *ddev;
 	struct ivmd_entry *ivmd;
+	int rc;
 
 	DPRINTF(0, "add %s to iommu%d.%.4x\n", dmar_bdf(sid), dom->iommu->id, dom->did);
 	ddev = malloc(sizeof(*ddev), M_DEVBUF, M_ZERO | M_WAITOK);
@@ -2167,8 +2182,14 @@ domain_add_device(struct domain *dom, int sid)
 			continue;
 		if ((ivmd->flags & (IVMD_EXCLRANGE | IVMD_UNITY)) == 0)
 			continue;
-		extent_alloc_region(dom->iovamap, ivmd->addr, ivmd->size,
+		rc = extent_alloc_region(dom->iovamap, ivmd->addr, ivmd->size,
 		    EX_WAITOK | EX_CONFLICTOK);
+		if (rc) {
+			DPRINTF(1, "%s: reserve device window %#llx+%#llx failed (%d)\n",
+			    dom->exname,
+			    (unsigned long long)ivmd->addr,
+			    (unsigned long long)ivmd->size, rc);
+		}
 		/* XXX use correct R/W permission for IVMD_UNITY */
 		domain_map_pthru(dom, ivmd->addr, ivmd->addr + ivmd->size);
 	}
@@ -2244,6 +2265,214 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	domain_add_device(dom, sid);
 
 	return dom;
+}
+
+static struct ppbwin_entry *
+acpidmar_ppbwin_topmost(struct acpidmar_softc *sc, int segment, int bus)
+{
+	struct ppbwin_entry *pw, *best = NULL;
+
+	TAILQ_FOREACH(pw, &sc->sc_ppbwins, link) {
+		if (pw->segment != segment)
+			continue;
+		if (bus < pw->sec || bus > pw->sub)
+			continue;
+		if (best == NULL || pw->sec < best->sec ||
+		    (pw->sec == best->sec && pw->sub > best->sub))
+			best = pw;
+	}
+
+	return best;
+}
+
+#ifdef BRIDGE_DEBUG
+static int
+acpidmar_ppbwin_range_contains(bus_addr_t base, bus_size_t size,
+    bus_addr_t start, bus_size_t len)
+{
+	bus_addr_t end, lim;
+
+	if (size == 0 || len == 0)
+		return 0;
+
+	end = base + size;
+	lim = start + len;
+	if (end < base || lim < start)
+	return 0;
+
+	return (start >= base && lim <= end);
+}
+
+static int
+acpidmar_ppbwin_covered(struct ppbwin_entry *top, bus_addr_t start,
+    bus_size_t len)
+{
+	return acpidmar_ppbwin_range_contains(top->mem_base, top->mem_size,
+	    start, len) ||
+	    acpidmar_ppbwin_range_contains(top->pmem_base, top->pmem_size,
+	    start, len);
+}
+
+static void
+acpidmar_ppbwin_validate(struct acpidmar_softc *sc, struct ppbwin_entry *top,
+    int segment, int bus)
+{
+	struct ppbwin_entry *pw;
+
+	if (top == NULL)
+		return;
+
+	TAILQ_FOREACH(pw, &sc->sc_ppbwins, link) {
+		if (pw->segment != segment)
+			continue;
+		if (bus < pw->sec || bus > pw->sub)
+			continue;
+		if (pw == top)
+			continue;
+
+		if (pw->mem_size != 0 &&
+		    !acpidmar_ppbwin_covered(top, pw->mem_base, pw->mem_size)) {
+			printf("dmar: bridge-debug: bus %u top %s does not cover mem "
+			    "window from %s (%#llx+%#llx)\n",
+			    bus, dmar_bdf(top->sid), dmar_bdf(pw->sid),
+			    (unsigned long long)pw->mem_base,
+			    (unsigned long long)pw->mem_size);
+		}
+		if (pw->pmem_size != 0 &&
+		    !acpidmar_ppbwin_covered(top, pw->pmem_base, pw->pmem_size)) {
+			printf("dmar: bridge-debug: bus %u top %s does not cover "
+			    "prefetch window from %s (%#llx+%#llx)\n",
+			    bus, dmar_bdf(top->sid), dmar_bdf(pw->sid),
+			    (unsigned long long)pw->pmem_base,
+			    (unsigned long long)pw->pmem_size);
+		}
+	}
+}
+#endif
+
+struct ppbwin_entry *
+acpidmar_ppbwin_lookup(struct acpidmar_softc *sc, int segment, uint16_t sid)
+{
+	struct ppbwin_entry *pw;
+
+	TAILQ_FOREACH(pw, &sc->sc_ppbwins, link) {
+		if (pw->segment == segment && pw->sid == sid)
+			return pw;
+	}
+	return NULL;
+}
+
+void
+acpidmar_ppbwin_record(struct acpidmar_softc *sc, pci_chipset_tag_t pc,
+    struct pci_attach_args *pa, int segment, uint16_t sid)
+{
+	struct ppbwin_entry *pw;
+	pcireg_t blr;
+	bus_addr_t base, limit;
+	bus_size_t size;
+	uint8_t sec, sub;
+
+	/*
+	 * Record PCI-PCI bridge forwarding windows keyed by ACPI segment.
+	 * IOMMU domains for devices in segment can then exclude those
+	 * windows from DVA allocation.
+	 */
+	blr = pci_conf_read(pc, pa->pa_tag, PPB_REG_BUSINFO);
+	sec = PPB_BUSINFO_SECONDARY(blr);
+	sub = PPB_BUSINFO_SUBORDINATE(blr);
+	if (sub < sec || sub == 0)
+		return;
+
+	pw = acpidmar_ppbwin_lookup(sc, segment, sid);
+	if (pw == NULL) {
+		pw = malloc(sizeof(*pw), M_DEVBUF, M_ZERO | M_WAITOK);
+		pw->segment = segment;
+		pw->sid = sid;
+		TAILQ_INSERT_TAIL(&sc->sc_ppbwins, pw, link);
+	}
+	pw->sec = sec;
+	pw->sub = sub;
+
+	/* Non-prefetchable memory window */
+	blr = pci_conf_read(pc, pa->pa_tag, PPB_REG_MEM);
+	base = (bus_addr_t)((blr & 0x0000fff0) << 16);
+	limit = (bus_addr_t)((blr & 0xfff00000) | 0x000fffff);
+	if (limit > base)
+		size = (bus_size_t)(limit - base + 1);
+	else
+		size = 0;
+	pw->mem_base = base;
+	pw->mem_size = size;
+
+	/* Prefetchable memory window */
+	blr = pci_conf_read(pc, pa->pa_tag, PPB_REG_PREFMEM);
+	base = (bus_addr_t)((blr & 0x0000fff0) << 16);
+	limit = (bus_addr_t)((blr & 0xfff00000) | 0x000fffff);
+#ifdef __LP64__
+	/*
+	 * Only include the high 32-bit registers when the bridge indicates
+	 * a 64-bit prefetchable window.
+	 */
+	if ((blr & 0x000f000f) == 0x00010001) {
+		pcireg_t hi;
+
+		hi = pci_conf_read(pc, pa->pa_tag, PPB_REG_PREFBASE_HI32);
+		base |= ((uint64_t)hi << 32);
+		hi = pci_conf_read(pc, pa->pa_tag, PPB_REG_PREFLIM_HI32);
+		limit |= ((uint64_t)hi << 32);
+	}
+#endif
+	if (limit > base)
+		size = (bus_size_t)(limit - base + 1);
+	else
+		size = 0;
+	pw->pmem_base = base;
+	pw->pmem_size = size;
+}
+
+void
+acpidmar_ppbwin_reserve(struct acpidmar_softc *sc, struct domain *dom,
+    int segment, int bus)
+{
+	struct ppbwin_entry *pw;
+	bus_addr_t start;
+	bus_size_t size;
+	int rc;
+
+	pw = acpidmar_ppbwin_topmost(sc, segment, bus);
+#ifdef BRIDGE_DEBUG
+	acpidmar_ppbwin_validate(sc, pw, segment, bus);
+#endif
+	if (pw == NULL)
+		return;
+
+	/* Reserve non-prefetchable bridge window */
+	if (pw->mem_size != 0) {
+		start = pw->mem_base;
+		size = pw->mem_size;
+		rc = extent_alloc_region(dom->iovamap, start, size,
+                    EX_WAITOK | EX_CONFLICTOK);
+		if (rc) {
+			DPRINTF(1, "%s: reserve PPB mem window %#llx+%#llx failed (%d)\n",
+			    dom->exname,
+			    (unsigned long long)start,
+			    (unsigned long long)size, rc);
+ 		}
+	}
+
+	/* Reserve prefetchable bridge window */
+	if (pw->pmem_size != 0) {
+		start = pw->pmem_base;
+		size = pw->pmem_size;
+		rc = extent_alloc_region(dom->iovamap, start, size,
+                    EX_WAITOK | EX_CONFLICTOK);
+		if (rc) {
+			DPRINTF(1, "%s: reserve PPB pmem window %#llx+%#llx failed (%d)\n",
+			    dom->exname,
+			    (unsigned long long)start,
+			    (unsigned long long)size, rc);
+		}
+	}
 }
 
 /* Map Guest Pages into IOMMU */
@@ -2398,13 +2627,18 @@ void
 acpidmar_pci_hook(pci_chipset_tag_t pc, struct pci_attach_args *pa)
 {
 	int		bus, dev, fun, sid, rc;
+	int		segment;
 	struct domain	*dom;
-	pcireg_t	reg;
+	pcireg_t	reg, bhlc;
+	int		hdrtype;
 
 	if (!acpidmar_sc) {
 		/* No DMAR, ignore */
 		return;
 	}
+
+	/* Cache PCI chipset tag for devscope matching */
+	acpidmar_sc->sc_pc = pc;
 
 	/* Add device to our list if valid */
 	pci_decompose_tag(pc, pa->pa_tag, &bus, &dev, &fun);
@@ -2414,10 +2648,30 @@ acpidmar_pci_hook(pci_chipset_tag_t pc, struct pci_attach_args *pa)
 
 	reg = pci_conf_read(pc, pa->pa_tag, PCI_CLASS_REG);
 
+#ifdef __amd64__
+	segment = acpipci_domain_to_seg(pa->pa_domain);
+	if (segment < 0) {
+		DPRINTF(1, "acpidmar: no ACPI segment for pci domain %d\n",
+		    pa->pa_domain);
+		return;
+	}
+#else
+	segment = pa->pa_domain;
+#endif
+
+	/* Record PCI-PCI bridge forwarding windows */
+	bhlc = pci_conf_read(pc, pa->pa_tag, PCI_BHLC_REG);
+	hdrtype = PCI_HDRTYPE_TYPE(bhlc);	/* header > class/subclass */
+	if (hdrtype == 0x01)
+		acpidmar_ppbwin_record(acpidmar_sc, pc, pa, segment, sid);
+
 	/* Add device to domain */
-	dom = acpidmar_pci_attach(acpidmar_sc, pa->pa_domain, sid, 0);
+	dom = acpidmar_pci_attach(acpidmar_sc, segment, sid, 0);
 	if (dom == NULL)
 		return;
+
+	/* Reserve upstream PCI-PCI bridge windows from this domain */
+	acpidmar_ppbwin_reserve(acpidmar_sc, dom, segment, bus);
 
 	if (PCI_CLASS(reg) == PCI_CLASS_DISPLAY &&
 	    PCI_SUBCLASS(reg) == PCI_SUBCLASS_DISPLAY_VGA) {
@@ -2431,8 +2685,8 @@ acpidmar_pci_hook(pci_chipset_tag_t pc, struct pci_attach_args *pa)
 		domain_map_pthru(dom, 0x00, 16*1024*1024);
 
 		/* Keep the identity mapped IOVA range out of the allocator */
-		rc = extent_alloc_region(dom->iovamap, 0,
-		    16*1024*1024, EX_WAITOK | EX_CONFLICTOK);
+		rc = extent_alloc_region(dom->iovamap, 0, 16*1024*1024,
+		    EX_WAITOK | EX_CONFLICTOK);
 		if (rc) {
 			printf("%s: reserve ISA IOVA region failed (%d)\n",
 			    dom->exname, rc);
@@ -2611,6 +2865,7 @@ acpidmar_init(struct acpidmar_softc *sc, struct acpi_dmar *dmar)
 	TAILQ_INIT(&sc->sc_drhds);
 	TAILQ_INIT(&sc->sc_rmrrs);
 	TAILQ_INIT(&sc->sc_atsrs);
+	TAILQ_INIT(&sc->sc_ppbwins);
 
 	off = sizeof(*dmar);
 	while (off < dmar->hdr.length) {
@@ -2660,8 +2915,7 @@ acpidmar_init(struct acpidmar_softc *sc, struct acpi_dmar *dmar)
 
 				/* Keep the identity mapped region out of the IOVA allocator */
 				len = rmrr->end - rmrr->start;
-				rc = extent_alloc_region(dom->iovamap,
-				    rmrr->start, len,
+				rc = extent_alloc_region(dom->iovamap, rmrr->start, len,
 				    EX_WAITOK | EX_CONFLICTOK);
 				if (rc) {
 					printf("%s: rmrr extent reserve failed (%d)\n",
@@ -3449,6 +3703,7 @@ acpiivrs_init(struct acpidmar_softc *sc, struct acpi_ivrs *ivrs)
 	TAILQ_INIT(&sc->sc_drhds);
 	TAILQ_INIT(&sc->sc_rmrrs);
 	TAILQ_INIT(&sc->sc_atsrs);
+	TAILQ_INIT(&sc->sc_ppbwins);
 
 	DPRINTF(0,"======== IVRS\n");
 	off = sizeof(*ivrs);

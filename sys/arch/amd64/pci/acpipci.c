@@ -89,6 +89,28 @@ int	acpipci_print(void *, const char *);
 int	acpipci_parse_resources(int, union acpi_resource *, void *);
 void	acpipci_osc(struct acpipci_softc *);
 
+/*
+ * Translate the OpenBSD PCI domain enumeration index back to the ACPI
+ * segment number (_SEG).
+ */
+int
+acpipci_domain_to_seg(int domain)
+{
+	struct acpipci_softc *sc;
+	int i, d = 0;
+
+	for (i = 0; i < acpipci_cd.cd_ndevs; i++) {
+		sc = (struct acpipci_softc *)acpipci_cd.cd_devs[i];
+		if (sc == NULL)
+			continue;
+		if (d == domain)
+			return sc->sc_seg;
+		d++;
+	}
+
+	return -1;
+}
+
 int
 acpipci_match(struct device *parent, void *match, void *aux)
 {
