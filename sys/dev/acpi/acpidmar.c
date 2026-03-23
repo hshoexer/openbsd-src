@@ -73,6 +73,7 @@
 #define IOMMU_TLB_RANGE_MAX_DESCS_INTEL	128
 #define IOMMU_TLB_RANGE_MAX_PAGES_AMD	64
 
+#define IOMMU_DEBUG
 #ifdef IOMMU_DEBUG
 int acpidmar_dbg_lvl = 0;
 #define DPRINTF(lvl,x...) if (acpidmar_dbg_lvl >= lvl) { printf(x); }
@@ -2520,7 +2521,7 @@ domain_map_device(struct domain *dom, int sid)
 			ivhd_flush_devtab(iommu, rid);
 #ifdef IOMMU_DEBUG
 			//ivhd_showreg(iommu);
-			ivhd_showdte(iommu);
+			//ivhd_showdte(iommu);
 #endif
 		}
 		return;

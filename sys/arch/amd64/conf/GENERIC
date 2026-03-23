@@ -47,7 +47,7 @@ acpibtn*	at acpi?
 acpicpu*	at acpi?
 acpicmos*	at acpi?
 acpidock*	at acpi?
-acpidmar0	at acpi? disable
+acpidmar0	at acpi?
 acpiec*		at acpi?
 acpihid*	at acpi?
 acpipci*	at acpi?
