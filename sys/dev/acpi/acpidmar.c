@@ -143,6 +143,7 @@ struct domain {
 	struct mutex		exlck;
 	char			exname[32];
 	struct extent		*iovamap;
+	struct ivhd_dteset	*dteset;
 	TAILQ_HEAD(,domain_dev)	devices;
 	TAILQ_ENTRY(domain)	link;
 };
@@ -201,6 +202,15 @@ struct ivmd_entry {
 	uint16_t		start_id;
 	uint16_t		end_id;
 	uint8_t			flags;
+};
+
+struct ivhd_dteset {
+	TAILQ_ENTRY(ivhd_dteset) link;
+	uint16_t		sor;
+	uint16_t		eor;
+	uint8_t			dte;
+	int			alias;
+	uint16_t		srcid;
 };
 
 struct iommu_pic {
@@ -263,6 +273,9 @@ struct iommu_softc {
 	void			*wait_tbl;
 	paddr_t			wait_tblp;
 	uint32_t		wait_seq;
+
+	/* AMD DTE settings and ranges */
+	TAILQ_HEAD(dtesets,ivhd_dteset) dtesets;
 };
 
 static inline int
@@ -322,7 +335,7 @@ int		acpiivhd_intr(void *);
 
 void _dumppte(struct pte_entry *, int, vaddr_t);
 
-struct domain *domain_create(struct iommu_softc *, int);
+struct domain *domain_create(struct iommu_softc *, int, struct ivhd_dteset *);
 struct domain *domain_lookup(struct acpidmar_softc *, int, int);
 
 void domain_unload_map(struct domain *, bus_dmamap_t);
@@ -377,6 +390,9 @@ static void iommu_flush_tlb_segs(struct iommu_softc *, int, bus_dma_segment_t *,
 static int ivhd_invalidate_page(struct iommu_softc *, int, bus_addr_t);
 static void ivhd_completion_wait(struct iommu_softc *);
 static void ivhd_invalidate_segs(struct iommu_softc *, int, bus_dma_segment_t *, int);
+
+struct ivhd_dteset *ivhd_lookup_dteset(struct iommu_softc *, int);
+int ivhd_dev_alias(struct iommu_softc *, int);
 
 void iommu_set_rtaddr(struct iommu_softc *, paddr_t);
 
@@ -2091,7 +2107,7 @@ acpidmar_match_devscope(struct devlist_head *devlist, pci_chipset_tag_t pc,
 }
 
 struct domain *
-domain_create(struct iommu_softc *iommu, int did)
+domain_create(struct iommu_softc *iommu, int did, struct ivhd_dteset *dteset)
 {
 	struct domain	*dom;
 	int gaw;
@@ -2131,6 +2147,10 @@ domain_create(struct iommu_softc *iommu, int did)
 	gaw = min(iommu->agaw, iommu->mgaw);
 	dom->iovamap = extent_create(dom->exname, 0, (1LL << gaw)-1,
 	    M_DEVBUF, NULL, 0, EX_WAITOK | EX_NOCOALESCE);
+
+	/* AMD DTE settings for this domain */
+	if (iommu->dte)
+		dom->dteset = dteset;
 
 	/*
 	 * Some hardware, e.g. qwx(4), can't do DMA to low addresses.
@@ -2217,6 +2237,7 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	struct iommu_softc	*iommu;
 	struct domain_dev	*ddev;
 	struct domain		*dom;
+	struct ivhd_dteset	*dteset = NULL;
 	int			rc;
 
 	if (sc == NULL) {
@@ -2226,6 +2247,9 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	/* Lookup IOMMU for this device */
 	TAILQ_FOREACH(iommu, &sc->sc_drhds, link) {
 		if (iommu->segment != segment)
+			continue;
+		if (iommu->dte &&
+		    (dteset = ivhd_lookup_dteset(iommu, sid)) == NULL)
 			continue;
 		/* Check for devscope match or catchall iommu */
 		rc = acpidmar_match_devscope(&iommu->devices, sc->sc_pc, sid);
@@ -2250,11 +2274,11 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	if (iommu->ndoms <= 2) {
 		/* Running out of domains.. create catchall domain */
 		if (!iommu->unity) {
-			iommu->unity = domain_create(iommu, 1);
+			iommu->unity = domain_create(iommu, 1, dteset);
 		}
 		dom = iommu->unity;
 	} else {
-		dom = domain_create(iommu, --iommu->ndoms);
+		dom = domain_create(iommu, --iommu->ndoms, dteset);
 	}
 	if (!dom) {
 		printf("no domain here\n");
@@ -2543,7 +2567,7 @@ domain_map_device(struct domain *dom, int sid)
 	devfn = sid_devfn(sid);
 	/* AMD attach device */
 	if (iommu->dte) {
-		struct ivhd_dte *dte = &iommu->dte[sid];
+		struct ivhd_dte *dte = &iommu->dte[ivhd_dev_alias(iommu, sid)];
 		if (!dte->dw0) {
 			/* Setup Device Table Entry: bus.devfn */
 			DPRINTF(1, "@@@ PCI Attach: %.4x[%s] %.4x\n", sid, dmar_bdf(sid), dom->did);
@@ -3399,6 +3423,42 @@ ivhd_showcmd(struct iommu_softc *iommu)
 	}
 }
 
+/* AMD: Look up a device's DTE settings */
+struct ivhd_dteset *
+ivhd_lookup_dteset(struct iommu_softc *iommu, int sid)
+{
+	struct ivhd_dteset	*dteset;
+
+	TAILQ_FOREACH(dteset, &iommu->dtesets, link) {
+		if (sid < dteset->sor || sid > dteset->eor)
+			continue;
+		break;
+	}
+
+	return dteset;
+}
+
+/* AMD: Look up a devices's alias */
+int
+ivhd_dev_alias(struct iommu_softc *iommu, int sid)
+{
+	struct ivhd_dteset	*dteset;
+
+	TAILQ_FOREACH(dteset, &iommu->dtesets, link) {
+		if (!dteset->alias)
+			continue;
+		if (sid < dteset->sor || sid > dteset->eor)
+			continue;
+		break;
+	}
+
+	if (dteset)
+		return dteset->srcid;
+
+	/* No alias found, return original device sid */
+	return sid;
+}
+
 #define _c(x) (int)((iommu->ecap >> x ##_SHIFT) & x ## _MASK)
 
 /* AMD: Initialize IOMMU */
@@ -3420,6 +3480,7 @@ ivhd_iommu_init(struct acpidmar_softc *sc, struct iommu_softc *iommu,
 	}
 	TAILQ_INIT(&iommu->domains);
 	TAILQ_INIT(&iommu->devices);
+	TAILQ_INIT(&iommu->dtesets);
 
 	mtx_init(&iommu->reg_lock, IPL_HIGH);
 	mtx_init(&iommu->wait_lock, IPL_NONE);
@@ -3432,7 +3493,7 @@ ivhd_iommu_init(struct acpidmar_softc *sc, struct iommu_softc *iommu,
 	iommu->flags = IOMMU_FLAGS_CATCHALL;
 	if (ivhd->flags & IVHD_COHERENT)
 		iommu->flags |= IOMMU_FLAGS_COHERENT;
-	iommu->segment = 0;
+	iommu->segment = ivhd->segment;
 	iommu->ndoms = 256;
 
 	printf(": AMD iommu%d at 0x%.8llx\n", iommu->id, ivhd->address);
@@ -3530,10 +3591,69 @@ ivhd_iommu_init(struct acpidmar_softc *sc, struct iommu_softc *iommu,
 	return 0;
 }
 
+/*
+ * Link DTE setting to the IOMMU handling that device or device
+ * range.  Range specific settings need to be finalized by setting
+ * the end of range.  An IVHD entry specifying a start of range has
+ * always to be followed by a corresponding end of range IVHD entry.
+ */
+void
+acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
+    uint16_t eor, uint16_t srcid, int alias)
+{
+	struct ivhd_dteset	*dteset;
+
+	if (!iommu)
+		return;
+
+	dteset = malloc(sizeof(*dteset), M_DEVBUF, M_ZERO | M_WAITOK);
+	dteset->dte = dte;
+	dteset->sor = sor;
+	dteset->eor = eor;
+	dteset->srcid = srcid;
+	dteset->alias = alias;
+
+	/*
+	 * Put specific device entries before ranges.  When we look
+	 * up entries, specific device entries will be preferred.
+	 */
+	if (sor == eor)
+		TAILQ_INSERT_HEAD(&iommu->dtesets, dteset, link);
+	else
+		TAILQ_INSERT_TAIL(&iommu->dtesets, dteset, link);
+
+	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx alias %d\n",
+	    __func__, dteset->dte, dteset->sor, dteset->eor, dteset->srcid,
+	    dteset->alias);
+}
+
+/*
+ * Finalize a DTE setting range by updating the end of range of the
+ * last entry.
+ */
+void
+acpiivrs_dtesetting_eor(struct iommu_softc *iommu, uint16_t eor)
+{
+	struct ivhd_dteset	*dteset;
+
+	if (!iommu)
+		return;
+
+	dteset = TAILQ_LAST(&iommu->dtesets, dtesets);
+	if (!dteset)
+		return;
+
+	dteset->eor = eor;
+
+	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx alias %d\n",
+	    __func__, dteset->dte, dteset->sor, dteset->eor, dteset->srcid,
+	    dteset->alias);
+}
+
 void
 acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 {
-	struct iommu_softc *iommu;
+	struct iommu_softc *iommu = NULL;
 	struct acpi_ivhd_ext *ext;
 	union acpi_ivhd_entry *ie;
 	int start, off, dte, all_dte = 0;
@@ -3600,44 +3720,60 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			off += sizeof(ie->resvd);
 			break;
 		case IVHD_ALL:
+			acpiivrs_dtesetting(iommu, ie->all.data, 0, 0xffff,
+			    0, 0);
 			all_dte = ie->all.data;
 			DPRINTF(0," ALL %.4x\n", all_dte);
 			off += sizeof(ie->all);
 			break;
 		case IVHD_SEL:
+			acpiivrs_dtesetting(iommu, ie->sel.data, ie->sel.devid,
+			    ie->sel.devid, 0, 0);
 			dte = ie->sel.data;
 			DPRINTF(0," SELECT: %s %.4x\n", dmar_bdf(ie->sel.devid), dte);
 			off += sizeof(ie->sel);
 			break;
 		case IVHD_SOR:
+			acpiivrs_dtesetting(iommu, ie->sor.data, ie->sor.devid,
+			    0, 0, 0);
 			dte = ie->sor.data;
 			start = ie->sor.devid;
 			DPRINTF(0," SOR: %s %.4x\n", dmar_bdf(start), dte);
 			off += sizeof(ie->sor);
 			break;
 		case IVHD_EOR:
+			acpiivrs_dtesetting_eor(iommu, ie->eor.devid);
 			DPRINTF(0," EOR: %s\n", dmar_bdf(ie->eor.devid));
 			off += sizeof(ie->eor);
 			break;
 		case IVHD_ALIAS_SEL:
+			acpiivrs_dtesetting(iommu, ie->alias.data,
+			    ie->alias.devid, ie->alias.devid, ie->alias.srcid,
+			    1);
 			dte = ie->alias.data;
 			DPRINTF(0," ALIAS: src=%s: ", dmar_bdf(ie->alias.srcid));
 			DPRINTF(0," %s %.4x\n", dmar_bdf(ie->alias.devid), dte);
 			off += sizeof(ie->alias);
 			break;
 		case IVHD_ALIAS_SOR:
+			acpiivrs_dtesetting(iommu, ie->alias.data,
+			    ie->alias.devid, 0, ie->alias.srcid, 1);
 			dte = ie->alias.data;
 			DPRINTF(0," ALIAS_SOR: %s %.4x ", dmar_bdf(ie->alias.devid), dte);
 			DPRINTF(0," src=%s\n", dmar_bdf(ie->alias.srcid));
 			off += sizeof(ie->alias);
 			break;
 		case IVHD_EXT_SEL:
+			acpiivrs_dtesetting(iommu, ie->ext.data, ie->ext.devid,
+			    ie->ext.devid, 0, 0);
 			dte = ie->ext.data;
 			DPRINTF(0," EXT SEL: %s %.4x %.8x\n", dmar_bdf(ie->ext.devid),
 			    dte, ie->ext.extdata);
 			off += sizeof(ie->ext);
 			break;
 		case IVHD_EXT_SOR:
+			acpiivrs_dtesetting(iommu, ie->ext.data, ie->ext.devid,
+			    0, 0, 0);
 			dte = ie->ext.data;
 			DPRINTF(0," EXT SOR: %s %.4x %.8x\n", dmar_bdf(ie->ext.devid),
 			    dte, ie->ext.extdata);
