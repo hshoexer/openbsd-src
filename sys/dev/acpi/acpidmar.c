@@ -2677,6 +2677,12 @@ acpidmar_pci_hook(pci_chipset_tag_t pc, struct pci_attach_args *pa)
 	    PCI_SUBCLASS(reg) == PCI_SUBCLASS_DISPLAY_VGA) {
 		dom->flag = DOM_NOMAP;
 	}
+#if 1	/* XXX hshoexer */
+	if (PCI_CLASS(reg) == PCI_CLASS_CRYPTO &&
+	    PCI_SUBCLASS(reg) == PCI_SUBCLASS_CRYPTO_MISC) {
+		dom->flag = DOM_NOMAP;
+	}
+#endif
 	if (PCI_CLASS(reg) == PCI_CLASS_BRIDGE &&
 	    PCI_SUBCLASS(reg) == PCI_SUBCLASS_BRIDGE_ISA) {
 		/* For ISA Bridges, map 0-16Mb as 1:1 */
