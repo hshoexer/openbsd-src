@@ -3675,6 +3675,23 @@ acpiivrs_dtesetting_eor(struct iommu_softc *iommu, uint16_t eor)
 }
 
 void
+acpiivrs_add_device(struct iommu_softc *iommu, int sid)
+{
+	struct domain *dom;
+
+	if (!iommu)
+		return;
+
+	dom = domain_lookup(acpidmar_sc, iommu->segment, sid);
+	if (!dom) {
+		printf("no domain: %s\n", dmar_bdf(sid));
+		return;
+	}
+
+	domain_map_device(dom, sid);
+}
+
+void
 acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 {
 	struct iommu_softc *iommu = NULL;
@@ -3804,7 +3821,42 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			off += sizeof(ie->ext);
 			break;
 		case IVHD_SPECIAL:
-			DPRINTF(0," SPECIAL\n");
+			/* For now only handle IOAPICs */
+			if (ie->special.variety == IVHD_IOAPIC) {
+				acpiivrs_dtesetting(iommu, ie->special.data,
+				    ie->special.devid, ie->special.devid,
+				    0, 0);
+				acpiivrs_add_device(iommu, ie->special.devid);
+			}
+			DPRINTF(0," SPECIAL:");
+			dte = ie->special.data;
+			switch (ie->special.variety) {
+			case IVHD_IOAPIC:
+				DPRINTF(0," IOAPIC");
+				break;
+			case IVHD_HPET:
+				DPRINTF(0," HPET");
+				break;
+			default:
+				DPRINTF(0, "unknown ");
+			}
+			DPRINTF(0," %s %.4x %.8x", dmar_bdf(ie->special.devid),
+			    ie->special.handle, dte);
+			if (dte & IVHD_LINT1PASS)
+				DPRINTF(0," Lint1Pass");
+			if (dte & IVHD_LINT0PASS)
+				DPRINTF(0," Lint0Pass");
+			if ((dte >> IVHD_SYSMGT_SHIFT) & IVHD_SYSMGT_MASK)
+				DPRINTF(0," SYSMGT:%.2x",
+				    (dte >> IVHD_SYSMGT_SHIFT) &
+				    IVHD_SYSMGT_MASK);
+			if (dte & IVHD_NMIPASS)
+				DPRINTF(0," NMIPass");
+			if (dte & IVHD_EINTPASS)
+				DPRINTF(0," EIntPass");
+			if (dte & IVHD_INITPASS)
+				DPRINTF(0," INITPass");
+			DPRINTF(0,"\n");
 			off += sizeof(ie->special);
 			break;
 		default:
