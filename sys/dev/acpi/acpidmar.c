@@ -143,7 +143,6 @@ struct domain {
 	struct mutex		exlck;
 	char			exname[32];
 	struct extent		*iovamap;
-	struct ivhd_dteset	*dteset;
 	TAILQ_HEAD(,domain_dev)	devices;
 	TAILQ_ENTRY(domain)	link;
 };
@@ -335,7 +334,7 @@ int		acpiivhd_intr(void *);
 
 void _dumppte(struct pte_entry *, int, vaddr_t);
 
-struct domain *domain_create(struct iommu_softc *, int, struct ivhd_dteset *);
+struct domain *domain_create(struct iommu_softc *, int);
 struct domain *domain_lookup(struct acpidmar_softc *, int, int);
 
 void domain_unload_map(struct domain *, bus_dmamap_t);
@@ -393,6 +392,7 @@ static void ivhd_invalidate_segs(struct iommu_softc *, int, bus_dma_segment_t *,
 
 struct ivhd_dteset *ivhd_lookup_dteset(struct iommu_softc *, int);
 int ivhd_dev_alias(struct iommu_softc *, int);
+void ivhd_apply_dteset(struct ivhd_dte *, struct ivhd_dteset *);
 
 void iommu_set_rtaddr(struct iommu_softc *, paddr_t);
 
@@ -2103,7 +2103,7 @@ acpidmar_match_devscope(struct devlist_head *devlist, pci_chipset_tag_t pc,
 }
 
 struct domain *
-domain_create(struct iommu_softc *iommu, int did, struct ivhd_dteset *dteset)
+domain_create(struct iommu_softc *iommu, int did)
 {
 	struct domain	*dom;
 	int gaw;
@@ -2143,10 +2143,6 @@ domain_create(struct iommu_softc *iommu, int did, struct ivhd_dteset *dteset)
 	gaw = min(iommu->agaw, iommu->mgaw);
 	dom->iovamap = extent_create(dom->exname, 0, (1LL << gaw)-1,
 	    M_DEVBUF, NULL, 0, EX_WAITOK | EX_NOCOALESCE);
-
-	/* AMD DTE settings for this domain */
-	if (iommu->dte)
-		dom->dteset = dteset;
 
 	/*
 	 * Some hardware, e.g. qwx(4), can't do DMA to low addresses.
@@ -2226,7 +2222,6 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	struct iommu_softc	*iommu;
 	struct domain_dev	*ddev;
 	struct domain		*dom;
-	struct ivhd_dteset	*dteset = NULL;
 	int			rc, rid;
 
 	if (sc == NULL) {
@@ -2237,8 +2232,7 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	TAILQ_FOREACH(iommu, &sc->sc_drhds, link) {
 		if (iommu->segment != segment)
 			continue;
-		if (iommu->dte &&
-		    (dteset = ivhd_lookup_dteset(iommu, sid)) == NULL)
+		if (iommu->dte && ivhd_lookup_dteset(iommu, sid) == NULL)
 			continue;
 		/* Check for devscope match or catchall iommu */
 		rc = acpidmar_match_devscope(&iommu->devices, sc->sc_pc, sid);
@@ -2264,11 +2258,11 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	if (iommu->ndoms <= 2) {
 		/* Running out of domains.. create catchall domain */
 		if (!iommu->unity) {
-			iommu->unity = domain_create(iommu, 1, dteset);
+			iommu->unity = domain_create(iommu, 1);
 		}
 		dom = iommu->unity;
 	} else {
-		dom = domain_create(iommu, --iommu->ndoms, dteset);
+		dom = domain_create(iommu, --iommu->ndoms);
 	}
 	if (!dom) {
 		printf("no domain here\n");
@@ -2462,6 +2456,27 @@ void
 }
 
 void
+ivhd_apply_dteset(struct ivhd_dte *dte, struct ivhd_dteset *dteset)
+{
+	if (dteset == NULL || dteset->dte == 0)
+		return;
+
+	if (dteset->dte & IVHD_LINT1PASS)
+		dte_set_lint1pass(dte);
+	if (dteset->dte & IVHD_LINT0PASS)
+		dte_set_lint0pass(dte);
+	if ((dteset->dte >> IVHD_SYSMGT_SHIFT) & IVHD_SYSMGT_MASK)
+		dte_set_sysmgt(dte, (dteset->dte >> IVHD_SYSMGT_SHIFT) &
+		    IVHD_SYSMGT_MASK);
+	if (dteset->dte & IVHD_NMIPASS)
+		dte_set_nmipass(dte);
+	if (dteset->dte & IVHD_EINTPASS)
+		dte_set_eintpass(dte);
+	if (dteset->dte & IVHD_INITPASS)
+		dte_set_initpass(dte);
+}
+
+void
 domain_map_device(struct domain *dom, int sid)
 {
 	struct iommu_softc	*iommu;
@@ -2484,6 +2499,15 @@ domain_map_device(struct domain *dom, int sid)
 			    dmar_bdf(sid));
 			DPRINTF(1, "/%.4x[%s] %.4x\n", rid, dmar_bdf(rid),
 			    dom->did);
+			/*
+			 * The DTE settings are looked up by the
+			 * device's own ID: that is the entry naming
+			 * the device, and for aliased devices it is
+			 * the alias entry that carries their
+			 * settings.  They are applied at the DTE the
+			 * hardware will index, i.e. the requester ID.
+			 */
+			ivhd_apply_dteset(dte, ivhd_lookup_dteset(iommu, sid));
 			dte_set_host_page_table_root_ptr(dte, dom->ptep);
 			dte_set_domain(dte, dom->did);
 			dte_set_mode(dte, 3);  /* Set 3 level PTE */

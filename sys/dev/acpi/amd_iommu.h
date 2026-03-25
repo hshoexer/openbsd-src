@@ -177,9 +177,20 @@ struct ivhd_dte {
 #define DTE_IV			(1L << 0)			/* dw3 */
 #define DTE_SE			(1L << 1)
 #define DTE_SA			(1L << 2)
-#define DTE_INTTABLEN_SHIFT	1
+#define DTE_SYSMGT_SHIFT	8
+#define DTE_SYSMGT_MASK		0x3
+
+#define DTE_INTTABLEN_SHIFT	1				/* dw4 */
 #define DTE_INTTABLEN_MASK	0xF
 #define DTE_IRTP_MASK		0x000FFFFFFFFFFFC0LL
+
+#define DTE_INITPASS		(1L << 24)			/* dw5 */
+#define DTE_EINTPASS		(1L << 25)
+#define DTE_NMIPASS		(1L << 26)
+#define DTE_INTCTL_SHIFT	28
+#define DTE_INTCTL_MASK		0x3
+#define DTE_LINT0PASS		(1L << 30)
+#define DTE_LINT1PASS		(1L << 31)
 
 #define PTE_LVL5                48
 #define PTE_LVL4                39
@@ -261,6 +272,13 @@ dte_set_mode(struct ivhd_dte *dte, int mode)
 	iommu_rmw32(&dte->dw0, DTE_LEVEL_MASK, DTE_LEVEL_SHIFT, mode);
 }
 
+/* Set System Management Message Enable */
+static inline void
+dte_set_sysmgt(struct ivhd_dte *dte, int mode)
+{
+	iommu_rmw32(&dte->dw3, DTE_SYSMGT_MASK, DTE_SYSMGT_SHIFT, mode);
+}
+
 static inline void
 dte_set_tv(struct ivhd_dte *dte)
 {
@@ -281,6 +299,41 @@ static inline int
 dte_is_valid(struct ivhd_dte *dte)
 {
 	return (dte->dw0 & DTE_V);
+}
+
+/* Set Lint1Pass */
+static inline void
+dte_set_lint1pass(struct ivhd_dte *dte)
+{
+	dte->dw5 |= DTE_LINT1PASS;
+}
+
+/* Set Lint0Pass */
+static inline void
+dte_set_lint0pass(struct ivhd_dte *dte)
+{
+	dte->dw5 |= DTE_LINT0PASS;
+}
+
+/* Set NMIPass */
+static inline void
+dte_set_nmipass(struct ivhd_dte *dte)
+{
+	dte->dw5 |= DTE_NMIPASS;
+}
+
+/* Set EIntPass */
+static inline void
+dte_set_eintpass(struct ivhd_dte *dte)
+{
+	dte->dw5 |= DTE_EINTPASS;
+}
+
+/* Set InitPass */
+static inline void
+dte_set_initpass(struct ivhd_dte *dte)
+{
+	dte->dw5 |= DTE_INITPASS;
 }
 
 /*=========================================
