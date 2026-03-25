@@ -2553,6 +2553,29 @@ void
 }
 
 void
+domain_apply_dteset(struct ivhd_dte *dte, struct domain *dom)
+{
+	struct ivhd_dteset *dteset;
+
+	if ((dteset = dom->dteset) == NULL || dteset->dte == 0)
+		return;
+
+	if (dteset->dte & IVHD_LINT1PASS)
+		dte_set_lint1pass(dte);
+	if (dteset->dte & IVHD_LINT0PASS)
+		dte_set_lint0pass(dte);
+	if ((dteset->dte >> IVHD_SYSMGT_SHIFT) & IVHD_SYSMGT_MASK)
+		dte_set_sysmgt(dte, (dteset->dte >> IVHD_SYSMGT_SHIFT) &
+		    IVHD_SYSMGT_MASK);
+	if (dteset->dte & IVHD_NMIPASS)
+		dte_set_nmipass(dte);
+	if (dteset->dte & IVHD_EINTPASS)
+		dte_set_eintpass(dte);
+	if (dteset->dte & IVHD_INITPASS)
+		dte_set_initpass(dte);
+}
+
+void
 domain_map_device(struct domain *dom, int sid)
 {
 	struct iommu_softc	*iommu;
@@ -2571,6 +2594,7 @@ domain_map_device(struct domain *dom, int sid)
 		if (!dte->dw0) {
 			/* Setup Device Table Entry: bus.devfn */
 			DPRINTF(1, "@@@ PCI Attach: %.4x[%s] %.4x\n", sid, dmar_bdf(sid), dom->did);
+			domain_apply_dteset(dte, dom);
 			dte_set_host_page_table_root_ptr(dte, dom->ptep);
 			dte_set_domain(dte, dom->did);
 			dte_set_mode(dte, 3);  /* Set 3 level PTE */

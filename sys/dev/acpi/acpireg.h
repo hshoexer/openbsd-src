@@ -622,6 +622,14 @@ union acpi_ivhd_entry {
 		uint8_t		type;
 		uint16_t	resvd;
 		uint8_t		data;
+#define IVHD_LINT1PASS			(1L << 7)
+#define IVHD_LINT0PASS			(1L << 6)
+#define IVHD_SYSMGT_SHIFT		4
+#define IVHD_SYSMGT_MASK		0x3
+#define IVHD_DTERESVD			(1L << 3)
+#define IVHD_NMIPASS			(1L << 2)
+#define IVHD_EINTPASS			(1L << 1)
+#define IVHD_INITPASS			(1L << 0)
 	} __packed all;
 	struct {
 		uint8_t		type;
