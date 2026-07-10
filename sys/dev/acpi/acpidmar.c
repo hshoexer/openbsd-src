@@ -2475,16 +2475,20 @@ domain_map_device(struct domain *dom, int sid)
 	devfn = sid_devfn(sid);
 	/* AMD attach device */
 	if (iommu->dte) {
-		struct ivhd_dte *dte = &iommu->dte[ivhd_dev_alias(iommu, sid)];
+		int rid = ivhd_dev_alias(iommu, sid);
+		struct ivhd_dte *dte = &iommu->dte[rid];
 		if (!dte->dw0) {
 			/* Setup Device Table Entry: bus.devfn */
-			DPRINTF(1, "@@@ PCI Attach: %.4x[%s] %.4x\n", sid, dmar_bdf(sid), dom->did);
+			DPRINTF(1, "@@@ PCI Attach: %.4x[%s]", sid,
+			    dmar_bdf(sid));
+			DPRINTF(1, "/%.4x[%s] %.4x\n", rid, dmar_bdf(rid),
+			    dom->did);
 			dte_set_host_page_table_root_ptr(dte, dom->ptep);
 			dte_set_domain(dte, dom->did);
 			dte_set_mode(dte, 3);  /* Set 3 level PTE */
 			dte_set_tv(dte);
 			dte_set_valid(dte);
-			ivhd_flush_devtab(iommu, sid);
+			ivhd_flush_devtab(iommu, rid);
 #ifdef IOMMU_DEBUG
 			//ivhd_showreg(iommu);
 			ivhd_showdte(iommu);
