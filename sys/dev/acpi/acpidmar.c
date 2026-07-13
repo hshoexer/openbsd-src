@@ -2855,8 +2855,14 @@ acpidmar_init(struct acpidmar_softc *sc, struct acpi_dmar *dmar)
  * AMD Vi
  *=====================================================*/
 void	acpiivrs_ivhd(struct acpidmar_softc *, struct acpi_ivhd *);
+struct ivhd_dteset *acpiivrs_dteset_alloc(struct iommu_softc *, uint8_t,
+	    uint16_t, uint16_t, int);
+void	acpiivrs_dtesetting(struct iommu_softc *, uint8_t, uint16_t, uint16_t,
+	    uint16_t, int);
+void	acpiivrs_dtesetting_eor(struct iommu_softc *, struct ivhd_dteset *,
+	    uint16_t);
 int	ivhd_iommu_init(struct acpidmar_softc *, struct iommu_softc *,
-		struct acpi_ivhd *);
+	    struct acpi_ivhd *);
 int	_ivhd_issue_command(struct iommu_softc *, const struct ivhd_command *);
 void	ivhd_show_event(struct iommu_softc *, struct ivhd_event *evt, int);
 int	ivhd_issue_command(struct iommu_softc *, const struct ivhd_command *, int);
@@ -3487,10 +3493,32 @@ ivhd_iommu_init(struct acpidmar_softc *sc, struct iommu_softc *iommu,
 }
 
 /*
- * Link DTE setting to the IOMMU handling that device or device
- * range.  Range specific settings need to be finalized by setting
- * the end of range.  An IVHD entry specifying a start of range has
- * always to be followed by a corresponding end of range IVHD entry.
+ * Allocate a DTE setting for a device or device range.  The setting
+ * is not linked to the IOMMU yet:  a range is only complete once the
+ * corresponding end of range IVHD entry has been seen, so the caller
+ * keeps it pending until then.
+ */
+struct ivhd_dteset *
+acpiivrs_dteset_alloc(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
+    uint16_t srcid, int alias)
+{
+	struct ivhd_dteset	*dteset;
+
+	if (!iommu)
+		return NULL;
+
+	dteset = malloc(sizeof(*dteset), M_DEVBUF, M_ZERO | M_WAITOK);
+	dteset->dte = dte;
+	dteset->sor = sor;
+	dteset->srcid = srcid;
+	dteset->alias = alias;
+
+	return dteset;
+}
+
+/*
+ * Link a complete DTE setting to the IOMMU handling that device or
+ * device range.
  */
 void
 acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
@@ -3498,15 +3526,10 @@ acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
 {
 	struct ivhd_dteset	*dteset;
 
-	if (!iommu)
+	dteset = acpiivrs_dteset_alloc(iommu, dte, sor, srcid, alias);
+	if (!dteset)
 		return;
-
-	dteset = malloc(sizeof(*dteset), M_DEVBUF, M_ZERO | M_WAITOK);
-	dteset->dte = dte;
-	dteset->sor = sor;
 	dteset->eor = eor;
-	dteset->srcid = srcid;
-	dteset->alias = alias;
 
 	/*
 	 * Put specific device entries before ranges.  When we look
@@ -3523,22 +3546,22 @@ acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
 }
 
 /*
- * Finalize a DTE setting range by updating the end of range of the
- * last entry.
+ * Finalize a pending DTE setting range and link it to the IOMMU.
  */
 void
-acpiivrs_dtesetting_eor(struct iommu_softc *iommu, uint16_t eor)
+acpiivrs_dtesetting_eor(struct iommu_softc *iommu, struct ivhd_dteset *dteset,
+    uint16_t eor)
 {
-	struct ivhd_dteset	*dteset;
-
 	if (!iommu)
 		return;
 
-	dteset = TAILQ_LAST(&iommu->dtesets, dtesets);
-	if (!dteset)
+	if (dteset == NULL) {
+		DPRINTF(0, "%s: EOR without SOR\n", __func__);
 		return;
+	}
 
 	dteset->eor = eor;
+	TAILQ_INSERT_TAIL(&iommu->dtesets, dteset, link);
 
 	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx alias %d\n",
 	    __func__, dteset->dte, dteset->sor, dteset->eor, dteset->srcid,
@@ -3549,6 +3572,7 @@ void
 acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 {
 	struct iommu_softc *iommu = NULL;
+	struct ivhd_dteset *pending = NULL;
 	struct acpi_ivhd_ext *ext;
 	union acpi_ivhd_entry *ie;
 	int start, off, dte, all_dte = 0;
@@ -3629,15 +3653,16 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			off += sizeof(ie->sel);
 			break;
 		case IVHD_SOR:
-			acpiivrs_dtesetting(iommu, ie->sor.data, ie->sor.devid,
-			    0, 0, 0);
+			pending = acpiivrs_dteset_alloc(iommu, ie->sor.data,
+			    ie->sor.devid, 0, 0);
 			dte = ie->sor.data;
 			start = ie->sor.devid;
 			DPRINTF(0," SOR: %s %.4x\n", dmar_bdf(start), dte);
 			off += sizeof(ie->sor);
 			break;
 		case IVHD_EOR:
-			acpiivrs_dtesetting_eor(iommu, ie->eor.devid);
+			acpiivrs_dtesetting_eor(iommu, pending, ie->eor.devid);
+			pending = NULL;
 			DPRINTF(0," EOR: %s\n", dmar_bdf(ie->eor.devid));
 			off += sizeof(ie->eor);
 			break;
@@ -3651,8 +3676,8 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			off += sizeof(ie->alias);
 			break;
 		case IVHD_ALIAS_SOR:
-			acpiivrs_dtesetting(iommu, ie->alias.data,
-			    ie->alias.devid, 0, ie->alias.srcid, 1);
+			pending = acpiivrs_dteset_alloc(iommu, ie->alias.data,
+			    ie->alias.devid, ie->alias.srcid, 1);
 			dte = ie->alias.data;
 			DPRINTF(0," ALIAS_SOR: %s %.4x ", dmar_bdf(ie->alias.devid), dte);
 			DPRINTF(0," src=%s\n", dmar_bdf(ie->alias.srcid));
@@ -3667,8 +3692,8 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			off += sizeof(ie->ext);
 			break;
 		case IVHD_EXT_SOR:
-			acpiivrs_dtesetting(iommu, ie->ext.data, ie->ext.devid,
-			    0, 0, 0);
+			pending = acpiivrs_dteset_alloc(iommu, ie->ext.data,
+			    ie->ext.devid, 0, 0);
 			dte = ie->ext.data;
 			DPRINTF(0," EXT SOR: %s %.4x %.8x\n", dmar_bdf(ie->ext.devid),
 			    dte, ie->ext.extdata);
@@ -3683,6 +3708,11 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			off = ivhd->length;
 			break;
 		}
+	}
+	if (pending) {
+		/* Start of range entry without matching end of range */
+		DPRINTF(0," SOR without EOR\n");
+		free(pending, M_DEVBUF, sizeof(*pending));
 	}
 }
 
