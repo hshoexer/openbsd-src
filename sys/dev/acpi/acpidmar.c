@@ -2227,7 +2227,7 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	struct domain_dev	*ddev;
 	struct domain		*dom;
 	struct ivhd_dteset	*dteset = NULL;
-	int			rc;
+	int			rc, rid;
 
 	if (sc == NULL) {
 		return NULL;
@@ -2250,12 +2250,13 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 		printf("%s: no iommu found\n", dmar_bdf(sid));
 		return NULL;
 	}
+	rid = iommu->dte ? ivhd_dev_alias(iommu, sid) : sid;
 
 	/* Search domain devices */
 	TAILQ_FOREACH(dom, &iommu->domains, link) {
 		TAILQ_FOREACH(ddev, &dom->devices, link) {
 			/* XXX: match all functions? */
-			if (ddev->sid == sid) {
+			if (ddev->sid == rid) {
 				return dom;
 			}
 		}
@@ -2275,7 +2276,7 @@ domain_lookup(struct acpidmar_softc *sc, int segment, int sid)
 	}
 
 	/* Add device to domain */
-	domain_add_device(dom, sid);
+	domain_add_device(dom, rid);
 
 	return dom;
 }
