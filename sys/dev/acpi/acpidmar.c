@@ -3546,6 +3546,28 @@ acpiivrs_dteset_alloc(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
 }
 
 /*
+ * Combine two DTE settings.  The flag bits are independent enables
+ * and combine by OR.  SysMgt is a two-bit encoded field and has to
+ * pick the more permissive value: 01b forwards all SysMgt messages,
+ * 11b translates them, 10b INTx messages only, 00b none
+ * (01b|10b would yield 11b).
+ */
+uint8_t
+acpiivrs_dteset_merge(uint8_t a, uint8_t b)
+{
+	static const int rank[] = { 0, 3, 1, 2 };	/* 00b 01b 10b 11b */
+	uint8_t sysmgt_a, sysmgt_b, merged;
+
+	merged = (a | b) & ~(IVHD_SYSMGT_MASK << IVHD_SYSMGT_SHIFT);
+	sysmgt_a = (a >> IVHD_SYSMGT_SHIFT) & IVHD_SYSMGT_MASK;
+	sysmgt_b = (b >> IVHD_SYSMGT_SHIFT) & IVHD_SYSMGT_MASK;
+	merged |= (rank[sysmgt_a] > rank[sysmgt_b] ? sysmgt_a : sysmgt_b)
+	    << IVHD_SYSMGT_SHIFT;
+
+	return merged;
+}
+
+/*
  * Link a complete DTE setting to the IOMMU handling that device or
  * device range.
  */
@@ -3554,6 +3576,30 @@ acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
     uint16_t eor, uint16_t srcid, int type)
 {
 	struct ivhd_dteset	*dteset;
+
+	if (!iommu)
+		return;
+
+	/*
+	 * Entries naming the same single device share one DTE, so
+	 * their settings must be combined.  This happens with SPECIAL
+	 * entries: IOAPIC and HPET typically share a device ID.
+	 * Alias entries stay separate, they carry a source ID.
+	 */
+	if (sor == eor && type != DTESET_TYPE_ALIAS) {
+		TAILQ_FOREACH(dteset, &iommu->dtesets, link) {
+			if (dteset->type == DTESET_TYPE_ALIAS)
+				continue;
+			if (dteset->sor != sor || dteset->eor != eor)
+				continue;
+			dteset->dte = acpiivrs_dteset_merge(dteset->dte, dte);
+			if (type == DTESET_TYPE_SPECIAL)
+				dteset->type = DTESET_TYPE_SPECIAL;
+			DPRINTF(1, "%s: merged dte 0x%hhx sor 0x%hx type %d\n",
+			    __func__, dteset->dte, dteset->sor, dteset->type);
+			return;
+		}
+	}
 
 	dteset = acpiivrs_dteset_alloc(iommu, dte, sor, srcid, type);
 	if (!dteset)
