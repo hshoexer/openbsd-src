@@ -2904,9 +2904,12 @@ int
 acpiivhd_intr(void *ctx)
 {
 	struct iommu_softc *iommu = ctx;
+	uint64_t status;
 
-	if (!iommu->dte)
-		return (0);
+	status = iommu_read_8(iommu, IOMMUSTS_REG);
+	if (status & STS_EVTLOGINT)
+		iommu_write_8(iommu, IOMMUSTS_REG, STS_EVTLOGINT);
+
 	ivhd_poll_events(iommu);
 	return (1);
 }
