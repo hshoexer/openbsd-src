@@ -208,8 +208,11 @@ struct ivhd_dteset {
 	uint16_t		sor;
 	uint16_t		eor;
 	uint8_t			dte;
-	int			alias;
 	uint16_t		srcid;
+	int			type;
+#define DTESET_TYPE_DEVICE	0x0
+#define DTESET_TYPE_ALIAS	0x1
+#define DTESET_TYPE_SPECIAL	0x2
 };
 
 struct iommu_pic {
@@ -3372,7 +3375,7 @@ ivhd_dev_alias(struct iommu_softc *iommu, int sid)
 	struct ivhd_dteset	*dteset;
 
 	TAILQ_FOREACH(dteset, &iommu->dtesets, link) {
-		if (!dteset->alias)
+		if (dteset->type != DTESET_TYPE_ALIAS)
 			continue;
 		if (sid < dteset->sor || sid > dteset->eor)
 			continue;
@@ -3526,7 +3529,7 @@ ivhd_iommu_init(struct acpidmar_softc *sc, struct iommu_softc *iommu,
  */
 struct ivhd_dteset *
 acpiivrs_dteset_alloc(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
-    uint16_t srcid, int alias)
+    uint16_t srcid, int type)
 {
 	struct ivhd_dteset	*dteset;
 
@@ -3537,7 +3540,7 @@ acpiivrs_dteset_alloc(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
 	dteset->dte = dte;
 	dteset->sor = sor;
 	dteset->srcid = srcid;
-	dteset->alias = alias;
+	dteset->type = type;
 
 	return dteset;
 }
@@ -3548,11 +3551,11 @@ acpiivrs_dteset_alloc(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
  */
 void
 acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
-    uint16_t eor, uint16_t srcid, int alias)
+    uint16_t eor, uint16_t srcid, int type)
 {
 	struct ivhd_dteset	*dteset;
 
-	dteset = acpiivrs_dteset_alloc(iommu, dte, sor, srcid, alias);
+	dteset = acpiivrs_dteset_alloc(iommu, dte, sor, srcid, type);
 	if (!dteset)
 		return;
 	dteset->eor = eor;
@@ -3566,9 +3569,9 @@ acpiivrs_dtesetting(struct iommu_softc *iommu, uint8_t dte, uint16_t sor,
 	else
 		TAILQ_INSERT_TAIL(&iommu->dtesets, dteset, link);
 
-	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx alias %d\n",
+	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx type %d\n",
 	    __func__, dteset->dte, dteset->sor, dteset->eor, dteset->srcid,
-	    dteset->alias);
+	    dteset->type);
 }
 
 /*
@@ -3589,9 +3592,9 @@ acpiivrs_dtesetting_eor(struct iommu_softc *iommu, struct ivhd_dteset *dteset,
 	dteset->eor = eor;
 	TAILQ_INSERT_TAIL(&iommu->dtesets, dteset, link);
 
-	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx alias %d\n",
+	DPRINTF(1, "%s: dte 0x%hhx sor 0x%hx eor 0x%hx srcid 0x%hx type %d\n",
 	    __func__, dteset->dte, dteset->sor, dteset->eor, dteset->srcid,
-	    dteset->alias);
+	    dteset->type);
 }
 
 void
@@ -3616,6 +3619,7 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 {
 	struct iommu_softc *iommu = NULL;
 	struct ivhd_dteset *pending = NULL;
+	struct ivhd_dteset *dteset;
 	struct acpi_ivhd_ext *ext;
 	union acpi_ivhd_entry *ie;
 	int start, off, dte, all_dte = 0;
@@ -3683,21 +3687,21 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			break;
 		case IVHD_ALL:
 			acpiivrs_dtesetting(iommu, ie->all.data, 0, 0xffff,
-			    0, 0);
+			    0, DTESET_TYPE_DEVICE);
 			all_dte = ie->all.data;
 			DPRINTF(0," ALL %.4x\n", all_dte);
 			off += sizeof(ie->all);
 			break;
 		case IVHD_SEL:
 			acpiivrs_dtesetting(iommu, ie->sel.data, ie->sel.devid,
-			    ie->sel.devid, 0, 0);
+			    ie->sel.devid, 0, DTESET_TYPE_DEVICE);
 			dte = ie->sel.data;
 			DPRINTF(0," SELECT: %s %.4x\n", dmar_bdf(ie->sel.devid), dte);
 			off += sizeof(ie->sel);
 			break;
 		case IVHD_SOR:
 			pending = acpiivrs_dteset_alloc(iommu, ie->sor.data,
-			    ie->sor.devid, 0, 0);
+			    ie->sor.devid, 0, DTESET_TYPE_DEVICE);
 			dte = ie->sor.data;
 			start = ie->sor.devid;
 			DPRINTF(0," SOR: %s %.4x\n", dmar_bdf(start), dte);
@@ -3712,7 +3716,7 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 		case IVHD_ALIAS_SEL:
 			acpiivrs_dtesetting(iommu, ie->alias.data,
 			    ie->alias.devid, ie->alias.devid, ie->alias.srcid,
-			    1);
+			    DTESET_TYPE_ALIAS);
 			dte = ie->alias.data;
 			DPRINTF(0," ALIAS: src=%s: ", dmar_bdf(ie->alias.srcid));
 			DPRINTF(0," %s %.4x\n", dmar_bdf(ie->alias.devid), dte);
@@ -3720,7 +3724,8 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			break;
 		case IVHD_ALIAS_SOR:
 			pending = acpiivrs_dteset_alloc(iommu, ie->alias.data,
-			    ie->alias.devid, ie->alias.srcid, 1);
+			    ie->alias.devid, ie->alias.srcid,
+			    DTESET_TYPE_ALIAS);
 			dte = ie->alias.data;
 			DPRINTF(0," ALIAS_SOR: %s %.4x ", dmar_bdf(ie->alias.devid), dte);
 			DPRINTF(0," src=%s\n", dmar_bdf(ie->alias.srcid));
@@ -3728,7 +3733,7 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			break;
 		case IVHD_EXT_SEL:
 			acpiivrs_dtesetting(iommu, ie->ext.data, ie->ext.devid,
-			    ie->ext.devid, 0, 0);
+			    ie->ext.devid, 0, DTESET_TYPE_DEVICE);
 			dte = ie->ext.data;
 			DPRINTF(0," EXT SEL: %s %.4x %.8x\n", dmar_bdf(ie->ext.devid),
 			    dte, ie->ext.extdata);
@@ -3736,20 +3741,17 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 			break;
 		case IVHD_EXT_SOR:
 			pending = acpiivrs_dteset_alloc(iommu, ie->ext.data,
-			    ie->ext.devid, 0, 0);
+			    ie->ext.devid, 0, DTESET_TYPE_DEVICE);
 			dte = ie->ext.data;
 			DPRINTF(0," EXT SOR: %s %.4x %.8x\n", dmar_bdf(ie->ext.devid),
 			    dte, ie->ext.extdata);
 			off += sizeof(ie->ext);
 			break;
 		case IVHD_SPECIAL:
-			/* For now only handle IOAPICs */
-			if (ie->special.variety == IVHD_IOAPIC) {
-				acpiivrs_dtesetting(iommu, ie->special.data,
-				    ie->special.devid, ie->special.devid,
-				    0, 0);
-				acpiivrs_add_device(iommu, ie->special.devid);
-			}
+			/* Record special DTEs */
+			acpiivrs_dtesetting(iommu, ie->special.data,
+			    ie->special.devid, ie->special.devid, 0,
+			    DTESET_TYPE_SPECIAL);
 			DPRINTF(0," SPECIAL:");
 			dte = ie->special.data;
 			switch (ie->special.variety) {
@@ -3791,6 +3793,14 @@ acpiivrs_ivhd(struct acpidmar_softc *sc, struct acpi_ivhd *ivhd)
 		/* Start of range entry without matching end of range */
 		DPRINTF(0," SOR without EOR\n");
 		free(pending, M_DEVBUF, sizeof(*pending));
+	}
+	if (iommu) {
+		TAILQ_FOREACH(dteset, &iommu->dtesets, link) {
+			if (dteset->type != DTESET_TYPE_SPECIAL)
+				continue;
+			/* Add special DTEs */
+			acpiivrs_add_device(iommu, dteset->sor);
+		}
 	}
 }
 
