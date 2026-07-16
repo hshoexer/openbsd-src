@@ -685,6 +685,12 @@ domain_map_page_amd(struct domain *dom, vaddr_t va, paddr_t pa, uint64_t flags,
 	int idx, error = 0;
 	int create;
 
+#if 0	/* XXX hshoexer */
+	if (dom->flag & DOM_DEBUG) {
+		return (0);
+	}
+#endif
+
 	iommu = dom->iommu;
 	create = ((flags & PTE_P) != 0);
 
@@ -2651,6 +2657,11 @@ acpidmar_pci_hook(pci_chipset_tag_t pc, struct pci_attach_args *pa)
 		extent_alloc_region(dom->iovamap, 0, 16*1024*1024,
 		    EX_WAITOK | EX_CONFLICTOK);
 	}
+
+#if 0	/* XXX hshoexer */
+	if (sid == mksid(0xc1, 0x00, 0x1))
+		dom->flag |= DOM_DEBUG;
+#endif
 
 	/*
 	 * Ensure this device has a programmed context/DTE at attach time
