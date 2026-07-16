@@ -52,7 +52,9 @@
 #define EVT_TAIL_REG		0x2018
 
 #define IOMMUSTS_REG		0x2020
+#define STS_EVTLOGOVF		(1L << 0)
 #define STS_EVTLOGINT		(1L << 1)
+#define STS_EVTLOGRUN		(1L << 3)
 
 #define DEV_TAB_MASK		0x000FFFFFFFFFF000LL
 #define DEV_TAB_LEN		0x1FF

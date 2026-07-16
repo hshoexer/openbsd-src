@@ -459,6 +459,7 @@ void domain_map_check(struct domain *);
 struct pte_entry *pte_lvl(struct domain *, struct pte_entry *, vaddr_t,
 	int, uint64_t, int, int, int *);
 int  ivhd_poll_events(struct iommu_softc *);
+void ivhd_restart_events(struct iommu_softc *);
 void ivhd_showreg(struct iommu_softc *);
 void ivhd_showdte(struct iommu_softc *);
 void ivhd_showcmd(struct iommu_softc *);
@@ -2911,6 +2912,10 @@ acpiivhd_intr(void *ctx)
 		iommu_write_8(iommu, IOMMUSTS_REG, STS_EVTLOGINT);
 
 	ivhd_poll_events(iommu);
+
+	if (status & STS_EVTLOGOVF)
+		ivhd_restart_events(iommu);
+
 	return (1);
 }
 
@@ -3078,6 +3083,37 @@ ivhd_poll_events(struct iommu_softc *iommu)
 	}
 	iommu_write_4(iommu, EVT_HEAD_REG, head);
 	return (0);
+}
+
+/* AMD: Restart IOMMU event logging */
+void
+ivhd_restart_events(struct iommu_softc *iommu)
+{
+	uint64_t ctl, status;
+	int i;
+
+	/* Wait for event log becoming idle. */
+	for (i = 0; i < 1000; i++) {
+		status = iommu_read_8(iommu, IOMMUSTS_REG);
+		if ((status & STS_EVTLOGRUN) == 0)
+			break;
+		DELAY(10);
+	}
+	if (i == 1000) {
+		printf("iommu%d: event log did not stop\n", iommu->id);
+		return;
+	}
+
+	/* Disable event logging. */
+	ctl = iommu_read_8(iommu, IOMMUCTL_REG);
+	iommu_write_8(iommu, IOMMUCTL_REG, ctl & ~CTL_EVENTLOGEN);
+
+	/* Drain all event entries. */
+	ivhd_poll_events(iommu);
+
+	/* Clear overflow and enable logging. */
+	iommu_write_8(iommu, IOMMUSTS_REG, STS_EVTLOGOVF);
+	iommu_write_8(iommu, IOMMUCTL_REG, ctl | CTL_EVENTLOGEN);
 }
 
 /* AMD: Issue command to IOMMU queue */
