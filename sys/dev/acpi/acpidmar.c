@@ -90,6 +90,11 @@ int	acpidmar_force_cm = 1;
 /* Page Table Entry per domain */
 struct iommu_softc;
 
+struct timeval	acpidmar_erriv = { 1, 0 };
+
+unsigned long	acpidmar_flush_failures;
+struct timeval	acpidmar_last_flush_failure;
+
 static inline int
 mksid(int b, int d, int f)
 {
@@ -387,12 +392,12 @@ void iommu_flush_tlb(struct iommu_softc *, int, int);
 static void iommu_flush_tlb_reg(struct iommu_softc *, int, int);
 void iommu_flush_tlb_qi(struct iommu_softc *, int, int);
 void iommu_flush_tlb_page(struct iommu_softc *, int, bus_addr_t);
-static void iommu_flush_tlb_segs(struct iommu_softc *, int, bus_dma_segment_t *, int);
+static int iommu_flush_tlb_segs(struct iommu_softc *, int, bus_dma_segment_t *, int);
 
 /* AMD-Vi invalidation */
 static int ivhd_invalidate_page(struct iommu_softc *, int, bus_addr_t);
-static void ivhd_completion_wait(struct iommu_softc *);
-static void ivhd_invalidate_segs(struct iommu_softc *, int, bus_dma_segment_t *, int);
+static int ivhd_completion_wait(struct iommu_softc *);
+static int ivhd_invalidate_segs(struct iommu_softc *, int, bus_dma_segment_t *, int);
 
 struct ivhd_dteset *ivhd_lookup_dteset(struct iommu_softc *, int);
 int ivhd_dev_alias(struct iommu_softc *, int);
@@ -748,7 +753,7 @@ domain_unload_map(struct domain *dom, bus_dmamap_t dmam)
 	struct iommu_softc	*iommu;
 	paddr_t			base, end, idx;
 	psize_t			alen;
-	int			i, error;
+	int			i, error, flushfail = 0;
 
 	iommu = dom->iommu;
 	if (iommu_bad(iommu)) {
@@ -777,7 +782,17 @@ domain_unload_map(struct domain *dom, bus_dmamap_t dmam)
 
 	/* Flush translations */
 	iommu_flush_write_buffer(iommu);
-	iommu_flush_tlb_segs(iommu, dom->did, dmam->dm_segs, dmam->dm_nsegs);
+	if (iommu_flush_tlb_segs(iommu, dom->did, dmam->dm_segs,
+	    dmam->dm_nsegs)) {
+		flushfail = 1;
+		acpidmar_flush_failures++;
+		if (ratecheck(&acpidmar_last_flush_failure,
+		    &acpidmar_erriv)) {
+			printf("%s: %lu tlb flushes failed\n", __func__,
+			    acpidmar_flush_failures);
+			acpidmar_flush_failures = 0;
+		}
+	}
 
 	/* Second pass: free IOVA space */
 	for (i = 0; i < dmam->dm_nsegs; i++) {
@@ -795,6 +810,9 @@ domain_unload_map(struct domain *dom, bus_dmamap_t dmam)
 
 		mtx_enter(&dom->exlck);
 		error = extent_free(dom->iovamap, base, alen, EX_NOWAIT);
+		if (flushfail)
+			(void)extent_alloc_region(dom->iovamap, base, alen,
+			    EX_NOWAIT);
 		mtx_leave(&dom->exlck);
 
 		KASSERT(error == 0);
@@ -889,7 +907,7 @@ domain_load_map(struct domain *dom, bus_dmamap_t map, int flags, int pteflag,
 	}
 
 	iommu_flush_write_buffer(iommu);
-	iommu_flush_tlb_segs(iommu, dom->did, map->dm_segs, map->dm_nsegs);
+	(void)iommu_flush_tlb_segs(iommu, dom->did, map->dm_segs, map->dm_nsegs);
 	return (0);
 
 fail:
@@ -1553,7 +1571,7 @@ iommu_intel_pick_am(bus_addr_t addr, bus_addr_t end, int max_am)
 	return (0);
 }
 
-static void
+static int
 iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
     bus_dma_segment_t *segs, int nsegs)
 {
@@ -1567,7 +1585,7 @@ iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
 	int		i, n;
 
 	if (segs == NULL || nsegs <= 0)
-		return;
+		return 0;
 
 	npages = 0;
 	for (i = 0; i < nsegs; i++) {
@@ -1579,21 +1597,21 @@ iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
 			npages += (end - start) / VTD_PAGE_SIZE;
 	}
 	if (npages == 0)
-		return;
+		return 0;
 
 	if (iommu->dte) {
 		if (npages > IOMMU_TLB_RANGE_MAX_PAGES_AMD) {
-			(void)ivhd_invalidate_domain(iommu, did);
-			return;
+			if (ivhd_invalidate_domain(iommu, did) < 0)
+				return 1;
+			return 0;
 		}
-		ivhd_invalidate_segs(iommu, did, segs, nsegs);
-		return;
+		return ivhd_invalidate_segs(iommu, did, segs, nsegs);
 	}
 
 	/* No page-selective invalidation support */
 	if ((iommu->cap & CAP_PSI) == 0) {
 		iommu_flush_tlb(iommu, IOTLB_DOMAIN, did);
-		return;
+		return 0;
 	}
 
 	max_am = (int)cap_mamv(iommu->cap);
@@ -1620,7 +1638,7 @@ iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
 
 	if (ndescs > IOMMU_TLB_RANGE_MAX_DESCS_INTEL) {
 		iommu_flush_tlb(iommu, IOTLB_DOMAIN, did);
-		return;
+		return 0;
 	}
 
 	if ((iommu->gcmd & GCMD_QIE) && iommu->qi != NULL) {
@@ -1650,7 +1668,7 @@ iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
 				    iommu->id);
 				/* Bypass QI to avoid recursion on a saturated ring */
 				iommu_flush_tlb_reg(iommu, IOTLB_DOMAIN, did);
-				return;
+				return 0;
 			}
 			delay(10);
 			mtx_enter(&iommu->reg_lock);
@@ -1697,7 +1715,7 @@ iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
 		}
 
 		mtx_leave(&iommu->reg_lock);
-		return;
+		return 0;
 	}
 
 	/* Register-based PSI */
@@ -1736,6 +1754,8 @@ iommu_flush_tlb_segs(struct iommu_softc *iommu, int did,
 	}
 
 	mtx_leave(&iommu->reg_lock);
+
+	return 0;
 }
 
 /*
@@ -2449,7 +2469,7 @@ _iommu_map(void *dom, vaddr_t va, bus_addr_t gpa, bus_size_t len)
 		seg.ds_addr = start;
 		seg.ds_len = i;
 		iommu_flush_write_buffer(iommu);
-		iommu_flush_tlb_segs(iommu, d->did, &seg, 1);
+		(void)iommu_flush_tlb_segs(iommu, d->did, &seg, 1);
 	}
 }
 
@@ -3139,6 +3159,48 @@ _ivhd_issue_command(struct iommu_softc *iommu, const struct ivhd_command *cmd)
 
 	mtx_enter(&iommu->reg_lock);
 
+#if 0
+	if (iommu->id == 1 &&
+	    cmd->dw1 == ((INVALIDATE_IOMMU_PAGES << CMD_SHIFT) | 0xf1) &&
+	    cmd->dw2 != (0xFFFFF000 | 0x3)) {
+		static int cnt;
+		bus_addr_t iova;
+
+#define NDROP	8	/* XXX normal value 16 */
+		if (++cnt >= NDROP) {
+			if (cnt >= (NDROP + 1))
+				cnt = 0;
+			iova = cmd->dw3;
+			iova <<= 32;
+			iova |= cmd->dw2 & ~(bus_addr_t)VTD_PAGE_MASK;
+			printf("%s: dropping INVALIDATE_IOMMU_PAGES for 0x%lx\n",
+			    __func__, iova);
+
+			mtx_leave(&iommu->reg_lock);
+			return (-EBUSY);
+		}
+	}
+	if (iommu->id == 1 &&
+	    cmd->dw1 == ((INVALIDATE_IOMMU_PAGES << CMD_SHIFT) | 0xf1) &&
+	    cmd->dw2 == (0xFFFFF000 | 0x3)) {
+		static int cnt2;
+		bus_addr_t iova;
+
+#define NDROP2	1	/* XXX normal value: 23 */
+		if (++cnt2 > NDROP2) {
+			cnt2 = 0;
+			iova = cmd->dw3;
+			iova <<= 32;
+			iova |= cmd->dw2 & ~(bus_addr_t)VTD_PAGE_MASK;
+			printf("%s: dropping INVALIDATE_IOMMU_PAGES for 0x%lx\n",
+			    __func__, iova);
+
+			mtx_leave(&iommu->reg_lock);
+			return (-EBUSY);
+		}
+	}
+#endif
+
 	for (n = 0; ; n++) {
 		head = iommu_read_4(iommu, CMD_HEAD_REG);
 		tail = iommu_read_4(iommu, CMD_TAIL_REG);
@@ -3164,7 +3226,7 @@ _ivhd_issue_command(struct iommu_softc *iommu, const struct ivhd_command *cmd)
 	return (tail / sz);
 }
 
-#define IVHD_MAXDELAY 8
+#define IVHD_MAXDELAY 10
 int
 ivhd_issue_command(struct iommu_softc *iommu, const struct ivhd_command *cmd,
     int wait)
@@ -3173,7 +3235,8 @@ ivhd_issue_command(struct iommu_softc *iommu, const struct ivhd_command *cmd,
 
 	rc = _ivhd_issue_command(iommu, cmd);
 	if (rc >= 0 && wait)
-		ivhd_completion_wait(iommu);
+		if (ivhd_completion_wait(iommu) != 0)
+			return -1;
 	return rc;
 }
 
@@ -3229,7 +3292,7 @@ ivhd_invalidate_domain(struct iommu_softc *iommu, int did)
  * Enqueue a COMPLETION_WAIT command and poll the completion variable until it
  * is updated by the IOMMU.
  */
-static void
+static int
 ivhd_completion_wait(struct iommu_softc *iommu)
 {
 	struct ivhd_command wq = { 0 };
@@ -3240,7 +3303,7 @@ ivhd_completion_wait(struct iommu_softc *iommu)
 
 	if (iommu->wait_tbl == NULL) {
 		printf("iommu%d: missing completion wait buffer\n", iommu->id);
-		return;
+		return 1;
 	}
 
 	mtx_enter(&iommu->wait_lock);
@@ -3264,21 +3327,24 @@ ivhd_completion_wait(struct iommu_softc *iommu)
 		printf("iommu%d: completion wait enqueue failed: %d\n",
 		    iommu->id, rc);
 		mtx_leave(&iommu->wait_lock);
-		return;
+		return 1;
 	}
+	rc = 0;
 
 	/* wv[0] will be updated to token when the command completes */
-	for (i = 0; i < IVHD_MAXDELAY; i++) {
-		iommu_flush_cache(iommu, (void *)wv, sizeof(uint64_t) * 2);
-		if (wv[0] == token)
-			break;
+	iommu_flush_cache(iommu, (void *)wv, sizeof(uint64_t) * 2);
+	for (i = 0; wv[0] != token && i < IVHD_MAXDELAY; i++) {
 		DELAY(10 << i);
+		iommu_flush_cache(iommu, (void *)wv, sizeof(uint64_t) * 2);
 	}
-	if (i == IVHD_MAXDELAY) {
+	if (wv[0] != token) {
 		printf("iommu%d: completion wait timeout\n", iommu->id);
+		rc = 1;
 	}
 
 	mtx_leave(&iommu->wait_lock);
+
+	return rc;
 }
 
 /* AMD: Invalidate a single 4KB page in a domain */
@@ -3296,7 +3362,7 @@ ivhd_invalidate_page(struct iommu_softc *iommu, int did, bus_addr_t iova)
 }
 
 /* AMD: Invalidate translations for a list of IOVA ranges */
-static void
+static int
 ivhd_invalidate_segs(struct iommu_softc *iommu, int did, bus_dma_segment_t *segs,
     int nsegs)
 {
@@ -3305,7 +3371,7 @@ ivhd_invalidate_segs(struct iommu_softc *iommu, int did, bus_dma_segment_t *segs
 	int i, rc;
 
 	if (segs == NULL || nsegs <= 0)
-		return;
+		return 0;
 
 	for (i = 0; i < nsegs; i++) {
 		if (segs[i].ds_len == 0)
@@ -3323,13 +3389,15 @@ ivhd_invalidate_segs(struct iommu_softc *iommu, int did, bus_dma_segment_t *segs
 			if (rc < 0) {
 				printf("iommu%d: page invalidate enqueue "
 				    "failed: %d\n", iommu->id, rc);
-				ivhd_completion_wait(iommu);
-				return;
+				(void)ivhd_completion_wait(iommu);
+				if (ivhd_invalidate_domain(iommu, did) < 0)
+					return 1;
+				return 0;
 			}
 		}
 	}
 
-	ivhd_completion_wait(iommu);
+	return ivhd_completion_wait(iommu);
 }
 
 /* AMD: Display Registers */
@@ -3363,7 +3431,7 @@ ivhd_checkerr(struct iommu_softc *iommu)
 	ivhd_poll_events(iommu);
 
 	/* Generate ILLEGAL_COMMAND_ERROR : ok */
-	ivhd_issue_command(iommu, &cmd, 0);
+	(void)ivhd_issue_command(iommu, &cmd, 0);
 	ivhd_poll_events(iommu);
 
 	/* Generate page hardware error */
