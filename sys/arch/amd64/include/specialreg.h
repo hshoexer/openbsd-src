@@ -436,6 +436,11 @@
      "\023VTOMMSR" "\024IBSVIRT" "\031VMSARPROT" "\032SMTPROT" \
      "\035SVSMPAGEMSR" "\036NVSMSR" )
 
+/*
+ * AMD CPUID function 0x8000001F EBX bits
+ */
+#define CPUIDEBX_COHERENCY_SFW_NO	(1ULL << 31) /* no coherency cpu bug */
+
 /* Number of encrypted guests */
 #define CPUID_AMDSEV_ECX_BITS ("\20")
 

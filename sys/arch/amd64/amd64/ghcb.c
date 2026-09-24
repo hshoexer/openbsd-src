@@ -225,19 +225,20 @@ ghcb_sync_out(struct trapframe *frame, const struct ghcb_extra_regs *regs,
 	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_RDX))
 		ghcb->v_rdx = frame->tf_rdx & ghcb_sz_masks[gsout->sz_d];
 
-	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITCODE))
-		ghcb->v_sw_exitcode = regs->exitcode;
-	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITINFO1))
-		ghcb->v_sw_exitinfo1 = regs->exitinfo1;
-	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITINFO2))
-		ghcb->v_sw_exitinfo2 = regs->exitinfo2;
-	if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_SCRATCH))
-		ghcb->v_sw_scratch = regs->scratch;
-
-	if (regs && regs->data) {
-		data_sz = regs->data_sz;
-		KASSERT(data_sz <= sizeof(ghcb->v_sharedbuf));
-		memcpy(ghcb->v_sharedbuf, regs->data, data_sz);
+	if (regs) {
+		if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITCODE))
+			ghcb->v_sw_exitcode = regs->exitcode;
+		if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITINFO1))
+			ghcb->v_sw_exitinfo1 = regs->exitinfo1;
+		if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_EXITINFO2))
+			ghcb->v_sw_exitinfo2 = regs->exitinfo2;
+		if (ghcb_valbm_isset(gsout->valid_bitmap, GHCB_SW_SCRATCH))
+			ghcb->v_sw_scratch = regs->scratch;
+		if (regs->data) {
+			data_sz = regs->data_sz;
+			KASSERT(data_sz <= sizeof(ghcb->v_sharedbuf));
+			memcpy(ghcb->v_sharedbuf, regs->data, data_sz);
+		}
 	}
 }
 
@@ -270,10 +271,20 @@ ghcb_sync_in(struct trapframe *frame, struct ghcb_extra_regs *regs,
 		frame->tf_rdx |= (ghcb->v_rdx & ghcb_sz_masks[gsin->sz_d]);
 	}
 
-	if (regs && regs->data) {
-		data_sz = regs->data_sz;
-		KASSERT(data_sz <= sizeof(ghcb->v_sharedbuf));
-		memcpy(regs->data, ghcb->v_sharedbuf, data_sz);
+	if (regs) {
+		if (ghcb_valbm_isset(gsin->valid_bitmap, GHCB_SW_EXITCODE))
+			regs->exitcode = ghcb->v_sw_exitcode;
+		if (ghcb_valbm_isset(gsin->valid_bitmap, GHCB_SW_EXITINFO1))
+			regs->exitinfo1 = ghcb->v_sw_exitinfo1;
+		if (ghcb_valbm_isset(gsin->valid_bitmap, GHCB_SW_EXITINFO2))
+			regs->exitinfo2 = ghcb->v_sw_exitinfo2;
+		if (ghcb_valbm_isset(gsin->valid_bitmap, GHCB_SW_SCRATCH))
+			regs->scratch = ghcb->v_sw_scratch;
+		if (regs->data) {
+			data_sz = regs->data_sz;
+			KASSERT(data_sz <= sizeof(ghcb->v_sharedbuf));
+			memcpy(regs->data, ghcb->v_sharedbuf, data_sz);
+		}
 	}
 
 	ghcb_clear(ghcb);
@@ -433,4 +444,77 @@ _ghcb_io_rw(uint16_t port, int valsz, uint32_t *val, bool read)
 
 	if (read)
 		*val = frame.tf_rax;
+}
+
+/*
+ * ghcb_psc_vmgexit
+ *
+ * Request a page state change from the hypervisor.
+ */
+void
+ghcb_psc_vmgexit(struct ghcb_psc *psc)
+{
+	struct ghcb_sync	 syncout, syncin;
+	struct ghcb_sa		*ghcb;
+	struct ghcb_psc		 rpsc;
+	unsigned long		 s;
+	struct ghcb_extra_regs	 ghcb_regs, rghcb_regs;
+	int			 cnt;
+
+	memset(&syncout, 0, sizeof(syncout));
+	memset(&syncin, 0, sizeof(syncin));
+	memset(&ghcb_regs, 0, sizeof(ghcb_regs));
+
+	ghcb_regs.exitcode = SEV_VMGEXIT_PAGE_STATE_CHANGE;
+	ghcb_regs.scratch = ghcb_paddr + offsetof(struct ghcb_sa, v_sharedbuf);
+	ghcb_regs.data = psc;
+	ghcb_regs.data_sz = sizeof(*psc);
+
+	ghcb_sync_val(GHCB_SW_EXITCODE, GHCB_SZ64, &syncout);
+	ghcb_sync_val(GHCB_SW_EXITINFO1, GHCB_SZ64, &syncout);
+	ghcb_sync_val(GHCB_SW_EXITINFO2, GHCB_SZ64, &syncout);
+	ghcb_sync_val(GHCB_SW_SCRATCH, GHCB_SZ64, &syncout);
+
+	ghcb_sync_val(GHCB_SW_EXITINFO1, GHCB_SZ64, &syncin);
+	ghcb_sync_val(GHCB_SW_EXITINFO2, GHCB_SZ64, &syncin);
+
+	s = intr_disable();
+
+	for (cnt = 0; cnt < GHCB_MAX_RETRIES; cnt++) {
+		ghcb = (struct ghcb_sa *)ghcb_vaddr;
+		ghcb_sync_out(NULL, &ghcb_regs, ghcb, &syncout);
+
+		wrmsr(MSR_SEV_GHCB, ghcb_paddr);
+
+		vmgexit();
+
+		if (ghcb_verify_bm(ghcb->valid_bitmap, syncin.valid_bitmap)) {
+			ghcb_clear(ghcb);
+			panic("invalid hypervisor response");
+		}
+
+		memset(&rghcb_regs, 0, sizeof(rghcb_regs));
+		memset(&rpsc, 0, sizeof(rpsc));
+		rghcb_regs.data = &rpsc;
+		rghcb_regs.data_sz = sizeof(rpsc);
+
+		ghcb_sync_in(NULL, &rghcb_regs, ghcb, &syncin);
+
+		if (rghcb_regs.exitinfo1 != 0 || rpsc.psc_hdr.reserved != 0)
+			panic("page state change failed: 0x%llx 0x%x",
+			    rghcb_regs.exitinfo1, rpsc.psc_hdr.reserved);
+
+		/* All entries processed. */
+		if (rpsc.psc_hdr.cur_entry > psc->psc_hdr.end_entry)
+			break;
+
+		/* Zero means interrupted, retry.  Anything else is fatal. */
+		if (rghcb_regs.exitinfo2 != 0)
+			panic("page state change failed: 0x%llx",
+			    rghcb_regs.exitinfo2);
+	}
+	if (cnt == GHCB_MAX_RETRIES)
+		panic("page state change did not finish");
+
+	intr_restore(s);
 }

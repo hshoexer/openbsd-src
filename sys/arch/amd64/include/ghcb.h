@@ -44,6 +44,8 @@
 
 #define GHCB_MAX			0xFFF
 
+#define GHCB_MAX_RETRIES		8
+
 #endif	/* !_LOCORE */
 
 /* Definitions used with the MSR protocol */
@@ -118,6 +120,25 @@ struct ghcb_sync {
 	int			sz_d;
 };
 
+#define SNP_PSC_PRIVATE		0x0001
+#define SNP_PSC_SHARED		0x0002
+
+struct ghcb_psc {
+	struct {
+		uint16_t	cur_entry;
+		uint16_t	end_entry;
+		uint32_t	reserved;
+	} psc_hdr;
+
+	struct {
+		uint64_t	cur_page:12;
+		uint64_t	gfn:40;
+		uint64_t	operation:4;
+		uint64_t	pagesize:1;
+		uint64_t	reserved:7;
+	} psc_entry;
+};
+
 extern vaddr_t ghcb_vaddr;
 extern paddr_t ghcb_paddr;
 
@@ -136,6 +157,7 @@ int	ghcb_valbm_isset(uint8_t *, int);
 int	ghcb_verify_bm(uint8_t *, uint8_t *);
 int	ghcb_valid(struct ghcb_sa *);
 int	ghcb_empty(struct ghcb_sa *);
+void	ghcb_psc_vmgexit(struct ghcb_psc *);
 
 void	ghcb_sync_val(int, int, struct ghcb_sync *);
 void	ghcb_sync_out(struct trapframe *, const struct ghcb_extra_regs *,
