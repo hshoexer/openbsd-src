@@ -100,6 +100,7 @@
 #endif
 
 #include <machine/bus.h>
+#include <machine/snp.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -255,6 +256,8 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 		return (ENOMEM);
 	}
 
+	snp_rescind_pages(&mlist);
+
 	sva = va;
 	ssize = sz;
 	pgnext = TAILQ_FIRST(&mlist);
@@ -269,6 +272,7 @@ _bus_dmamap_create(bus_dma_tag_t t, bus_size_t size, int nsegments,
 			map->_dm_npages = 0;
 			km_free((void *)sva, ssize, &kv_any, &kp_none);
 			free(map, M_DEVBUF, mapsize);
+			snp_claim_pages(&mlist);
 			uvm_pglistfree(&mlist);
 			return (ENOMEM);
 		}
@@ -307,6 +311,7 @@ _bus_dmamap_destroy(bus_dma_tag_t t, bus_dmamap_t map)
 		for (pg = map->_dm_pages; map->_dm_npages--; pg++) {
 			TAILQ_INSERT_TAIL(&mlist, *pg, pageq);
 		}
+		snp_claim_pages(&mlist);
 		uvm_pglistfree(&mlist);
 	}
 
